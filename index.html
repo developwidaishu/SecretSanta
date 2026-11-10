@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Santa Workshop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0d2620; --night2:#143a30; --cream:#fffaf2; --paper:#fff; --ink:#2b2420; --muted:#7a6b5d;
+    --red:#c8283a; --red-dk:#8e1420; --green:#155d43; --green-lt:#e8f3ec; --gold:#e0a526; --line:#eadfcd;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;font-family:Inter,Segoe UI,system-ui,sans-serif;color:var(--ink);
+       background:radial-gradient(1200px 600px at 20% -10%,#1f5242 0%,transparent 60%),linear-gradient(180deg,var(--night),#081a15)}
+  #snow{position:fixed;inset:0;pointer-events:none;z-index:0}
+  .wrap{position:relative;z-index:1;max-width:1020px;margin:0 auto;padding:28px 16px 80px}
+  header{display:flex;align-items:center;gap:16px;color:#fff;margin-bottom:18px}
+  header .logo{font-size:44px;filter:drop-shadow(0 4px 10px rgba(0,0,0,.35))}
+  header h1{font-family:Fraunces,Georgia,serif;font-weight:800;font-size:30px;margin:0;letter-spacing:.2px}
+  header p{margin:2px 0 0;color:#b9d6c9;font-size:14px}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  nav button{all:unset;cursor:pointer;padding:10px 16px;border-radius:999px;color:#d6eadf;font-weight:600;font-size:14px;
+             background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+  nav button:hover{background:rgba(255,255,255,.12)}
+  nav button.on{background:var(--cream);color:var(--red-dk)}
+  nav .badge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:999px;background:var(--red);color:#fff;font-size:11px;margin-left:6px;text-align:center}
+  .card{background:var(--cream);border-radius:20px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.35);margin-bottom:16px}
+  .card h2{font-family:Fraunces,Georgia,serif;margin:0 0 4px;color:var(--red-dk);font-size:24px}
+  .card h3{margin:22px 0 8px;font-size:15px;color:var(--green)}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:14px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  @media (max-width:700px){.grid{grid-template-columns:1fr}}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+  input,textarea,select{width:100%;font:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--gold);border-color:transparent}
+  textarea{min-height:120px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .btn{cursor:pointer;border:0;border-radius:12px;padding:11px 18px;font:inherit;font-weight:600;font-size:14px;background:var(--green);color:#fff}
+  .btn:hover{filter:brightness(1.1)} .btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+  .btn.red{background:var(--red)} .btn.ghost{background:transparent;color:var(--green);border:1px solid var(--line)}
+  .btn.small{padding:6px 10px;font-size:12px;border-radius:8px}
+  .btn.big{font-size:18px;padding:16px 28px;border-radius:16px;background:linear-gradient(135deg,var(--red),var(--red-dk));box-shadow:0 10px 24px rgba(200,40,58,.35)}
+  .note{border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin:12px 0}
+  .note.warn{background:#fff3d6;color:#6b5113;border:1px solid #f1d58d}
+  .note.info{background:var(--green-lt);color:#1d4a39;border:1px solid #cfe5d8}
+  .note.bad{background:#fde8ea;color:#7c1622;border:1px solid #f4c3c9}
+  table.list{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+  table.list th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px;border-bottom:1px solid var(--line)}
+  table.list td{padding:8px;border-bottom:1px solid #f1e8da;vertical-align:top}
+  table.list td.hint{color:var(--muted);max-width:280px;white-space:pre-wrap;font-size:13px}
+  .tablewrap{overflow-x:auto}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.sent{background:#dff3e7;color:#146a43} .pill.failed{background:#fde1e4;color:#9b1726} .pill.pending{background:#f3ece0;color:#7a6b5d}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+  .stat{flex:1;min-width:130px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .stat b{display:block;font-size:26px;font-family:Fraunces,Georgia,serif;color:var(--green)}
+  .stat span{font-size:12px;color:var(--muted)}
+  .checklist{list-style:none;padding:0;margin:8px 0 18px}
+  .checklist li{padding:6px 0;font-size:14px}
+  .progress{height:10px;border-radius:999px;background:#efe5d4;overflow:hidden;margin-top:10px}
+  .progress i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#2f9a6f);width:0;transition:width .3s}
+  .hidden{display:none!important}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b3a30;color:#fff;padding:12px 18px;border-radius:12px;
+         box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;font-size:14px;max-width:min(560px,92vw)}
+  .toast.bad{background:var(--red-dk)}
+  dialog{border:0;border-radius:18px;padding:0;width:min(640px,94vw);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  dialog iframe{width:100%;height:76vh;border:0;display:block}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  .fp{font-family:ui-monospace,Consolas,monospace;background:#fff;border:1px dashed var(--line);padding:2px 8px;border-radius:6px}
+  /* reveal stage */
+  .stage{background:linear-gradient(180deg,#123328,#0b211b);border-radius:20px;padding:28px;color:#fff;text-align:center}
+  .stage h2{color:#ffe9a8!important}
+  .reveal-card{perspective:1000px;width:min(460px,100%);height:250px;margin:20px auto;cursor:pointer}
+  .reveal-inner{position:relative;width:100%;height:100%;transition:transform .8s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+  .reveal-card.flipped .reveal-inner{transform:rotateY(180deg)}
+  .face{position:absolute;inset:0;backface-visibility:hidden;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+  .face.front{background:linear-gradient(135deg,var(--red),var(--red-dk));box-shadow:0 20px 40px rgba(0,0,0,.4)}
+  .face.back{background:var(--cream);color:var(--ink);transform:rotateY(180deg)}
+  .face small{text-transform:uppercase;letter-spacing:2px;font-size:11px;opacity:.75}
+  .face .big{font-family:Fraunces,Georgia,serif;font-size:28px;font-weight:800;margin:6px 0}
+  .face .to{font-size:15px;opacity:.9}
+  .stage .counter{color:#b9d6c9;font-size:14px}
+  .chainlist{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:18px;font-size:13px;color:#b9d6c9}
+  .chainlist span.done{color:#ffe9a8}
+  .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .hero .emoji{font-size:64px}
+</style>
+</head>
+<body>
+<canvas id="snow"></canvas>
+<div class="wrap">
+  <header>
+    <div class="logo">🎅</div>
+    <div>
+      <h1>Secret Santa Workshop</h1>
+      <p>Organise the fun, never know the secrets. The robot elves handle the draw and the letters.</p>
+    </div>
+  </header>
+
+  <nav id="nav">
+    <button data-tab="event" class="on">🎄 Event</button>
+    <button data-tab="santas">🧑‍🎄 Santas <span class="badge" id="countBadge">0</span></button>
+    <button data-tab="mail">✉️ Mailbox</button>
+    <button data-tab="draw">🎲 Draw &amp; Send</button>
+    <button data-tab="reveal">🎁 Exchange Day</button>
+  </nav>
+
+  <!-- EVENT -->
+  <section id="tab-event" class="card">
+    <h2>The Rules of the Sleigh</h2>
+    <p class="sub">These details go into every Santa's mission letter.</p>
+    <div class="grid">
+      <div><label>Event name</label><input id="ev-title"></div>
+      <div><label>Signed by</label><input id="ev-organisers"></div>
+      <div><label>Budget</label><input id="ev-budget"></div>
+      <div><label>Exchange date(s)</label><input id="ev-dates"></div>
+      <div><label>Location</label><input id="ev-location"></div>
+      <div><label>Anything else (optional)</label><input id="ev-note" placeholder="e.g. Wrap it, tag it with your codename, drop it under the tree by 10am"></div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick="saveEvent()">Save details</button>
+      <button class="btn ghost" onclick="preview()">👀 Preview a mission letter</button>
+    </div>
+  </section>
+
+  <!-- SANTAS -->
+  <section id="tab-santas" class="card hidden">
+    <h2>Who's playing?</h2>
+    <p class="sub">Copy the rows from your Google Form responses sheet (header row included) and paste them here.
+      The elves look for columns named like <b>Name</b>, <b>Email</b>, <b>Wishlist / hints</b> and (optionally) <b>Avoid</b>
+      - people you shouldn't be paired with, e.g. your teammate who already knows your wishlist.</p>
+    <div id="lockNote" class="note warn hidden">🔒 Names are drawn, so the roster is locked - nobody can quietly change an email address to intercept a letter.</div>
+    <div id="importBox">
+      <textarea id="csv" placeholder="Timestamp	Email Address	Your name	Wishlist / hints for your Santa	Avoid pairing with
+11/10/2026 10:02	priya@arista.com	Priya Sharma	Filter coffee, plants, anything Studio Ghibli
+11/10/2026 10:15	rahul@arista.com	Rahul Menon	Board games! No mugs please 🙏	priya@arista.com"></textarea>
+      <div class="row">
+        <button class="btn" onclick="importCsv('replace')">Import (replace list)</button>
+        <button class="btn ghost" onclick="importCsv('append')">Import (add / update)</button>
+      </div>
+      <div id="importWarn"></div>
+      <h3>Add someone by hand</h3>
+      <div class="grid">
+        <div><label>Name</label><input id="add-name"></div>
+        <div><label>Email</label><input id="add-email"></div>
+        <div><label>Hints for their Santa</label><input id="add-hints"></div>
+        <div><label>Avoid (emails, comma-separated)</label><input id="add-avoid"></div>
+      </div>
+      <div class="row"><button class="btn" onclick="addOne()">Add Santa</button></div>
+    </div>
+    <h3>Santa list (<span id="countTxt">0</span>)</h3>
+    <div class="tablewrap"><table class="list" id="plist"></table></div>
+  </section>
+
+  <!-- MAIL -->
+  <section id="tab-mail" class="card hidden">
+    <h2>The robot elf's mailbox</h2>
+    <p class="sub">The app sends letters through a normal email account using SMTP.</p>
+    <div class="note warn">💡 <b>Use a dedicated mailbox</b> (e.g. a fresh Gmail like <i>blr.secret.santa@gmail.com</i>) - not your own.
+      Every letter also lands in the sender's <b>Sent</b> folder, so with "shred" turned on the elves delete those copies right after sending.
+      For Gmail: turn on 2-Step Verification, then create an <b>App Password</b> at myaccount.google.com/apppasswords.</div>
+    <div class="grid">
+      <div><label>Provider</label>
+        <select id="sm-preset" onchange="applyPreset()">
+          <option value="gmail">Gmail / Google Workspace</option>
+          <option value="outlook">Outlook / Microsoft 365</option>
+          <option value="custom">Custom SMTP</option>
+        </select></div>
+      <div><label>Sender display name</label><input id="sm-from_name"></div>
+      <div><label>SMTP host</label><input id="sm-host"></div>
+      <div class="grid" style="gap:10px">
+        <div><label>Port</label><input id="sm-port" type="number"></div>
+        <div><label>Security</label><select id="sm-security"><option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">None</option></select></div>
+      </div>
+      <div><label>Username (email)</label><input id="sm-user" autocomplete="off"></div>
+      <div><label>App password <span id="pwState" style="text-transform:none"></span></label><input id="sm-password" type="password" autocomplete="new-password" placeholder="Kept in memory only - never saved"></div>
+      <div><label>From address (optional)</label><input id="sm-from_email" placeholder="Defaults to the username"></div>
+      <div><label>IMAP host (for shredding)</label><input id="sm-imap_host"></div>
+    </div>
+    <div class="row"><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-size:14px;color:var(--ink);margin:0">
+      <input type="checkbox" id="sm-shred" style="width:auto"> Shred the robot's Sent copies after each batch (recommended)</label></div>
+    <div class="row">
+      <button class="btn" onclick="saveSmtp()">Save mailbox</button>
+    </div>
+    <h3>Send a test letter</h3>
+    <p class="sub" style="margin-bottom:8px">Sends a sample letter with a fake giftee - safe to send to yourself.</p>
+    <div class="row" style="margin-top:0"><input id="test-to" placeholder="you@arista.com" style="max-width:320px"><button class="btn ghost" onclick="testMail()">Send test</button></div>
+  </section>
+
+  <!-- DRAW -->
+  <section id="tab-draw" class="card hidden">
+    <div id="predraw">
+      <h2>Draw the names</h2>
+      <p class="sub">The draw makes <b>one big gift loop</b> through the whole office (A → B → C → … → A): nobody gets themselves,
+        no two people swap gifts with each other, and "avoid" rules are respected. Pairings go straight into a sealed vault and
+        into each Santa's inbox - this screen never shows them. Organisers can play too!</p>
+      <ul class="checklist" id="checklist"></ul>
+      <button class="btn big" id="drawBtn" onclick="drawAndSend()">🎲 Draw names &amp; send the letters</button>
+    </div>
+    <div id="postdraw" class="hidden">
+      <div class="hero">
+        <div class="emoji">🛷</div>
+        <div><h2>The sleigh has left!</h2>
+          <p class="sub" style="margin:0">Drawn <span id="drawnAt"></span> · draw fingerprint <span class="fp" id="fp"></span></p></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="st-sent">0</b><span>letters delivered</span></div>
+        <div class="stat"><b id="st-pending">0</b><span>waiting</span></div>
+        <div class="stat"><b id="st-failed">0</b><span>bounced / failed</span></div>
+      </div>
+      <div id="jobBox" class="hidden"><div class="progress"><i id="jobBar"></i></div><p class="sub" id="jobMsg" style="margin-top:8px"></p></div>
+      <div id="jobResult"></div>
+      <div class="row"><button class="btn" id="retryBtn" onclick="send('pending')">Send to everyone still waiting</button></div>
+      <h3>Delivery status</h3>
+      <p class="sub" style="margin-bottom:0">Someone lost their letter? Hit <b>Resend</b> - it goes only to their own address, and you still won't see what's inside.</p>
+      <div class="tablewrap"><table class="list" id="slist"></table></div>
+
+      <h3>📣 Send a nudge</h3>
+      <p class="sub" style="margin-bottom:8px">Re-sends every Santa their mission with a note from you - great for "3 days to go!" or announcing the voted exchange day.</p>
+      <textarea id="remindNote" style="min-height:70px;font-family:inherit" placeholder="The votes are in - gift exchange is on Wednesday, Dec 16 at 4pm in the cafeteria! 🎄"></textarea>
+      <div class="row"><button class="btn ghost" id="remindBtn" onclick="remind()">Send nudge to all Santas</button></div>
+
+      <h3>🧯 Vault controls</h3>
+      <div class="note info" id="vaultInfo"></div>
+      <div class="row">
+        <button class="btn ghost" id="burnBtn" onclick="burn()">🔥 Burn the vault key</button>
+        <button class="btn ghost" onclick="resetDraw()" style="color:var(--red)">↺ Start over (new draw)</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- REVEAL -->
+  <section id="tab-reveal" class="hidden">
+    <div class="stage card" id="revealIntro">
+      <h2>🎁 Exchange Day: unmask the Santas</h2>
+      <p style="color:#cfe3d9;max-width:560px;margin:8px auto 18px;line-height:1.6">Put this on the big screen. Everyone guesses who's behind each codename,
+        then click the card to unmask them. The draw is a single loop, so you can also run the exchange as a chain - each person who receives a gift gives theirs next.</p>
+      <p style="color:#ffd2a8;font-size:13px">Only open this on exchange day - it shows every pairing.</p>
+      <div class="row" style="justify-content:center"><input id="revealConfirm" placeholder="Type REVEAL" style="max-width:200px;text-align:center">
+        <button class="btn big" onclick="startReveal()">Unmask!</button></div>
+    </div>
+    <div class="stage card hidden" id="revealStage">
+      <div class="counter" id="revCounter"></div>
+      <div class="reveal-card" id="revCard" onclick="flip()">
+        <div class="reveal-inner">
+          <div class="face front"><small>A gift for</small><div class="big" id="revTo"></div><div class="to">from <b id="revCode"></b></div><div style="margin-top:18px;font-size:12px;opacity:.75">Who could it be? 🤔 · click to unmask</div></div>
+          <div class="face back"><small>Behind the codename</small><div class="big" style="color:var(--red-dk)" id="revGiver"></div><div class="to" style="color:var(--muted)" id="revCode2"></div></div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:center">
+        <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="step(-1)">← Back</button>
+        <button class="btn red" onclick="step(1)">Next gift →</button>
+      </div>
+      <div class="chainlist" id="chainlist"></div>
+    </div>
+  </section>
+</div>
+
+<dialog id="previewDlg"><iframe id="previewFrame"></iframe>
+  <div style="padding:10px;text-align:right;background:var(--cream)"><button class="btn" onclick="previewDlg.close()">Close</button></div></dialog>
+
+<script>
+let S = null; let poll = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function call(path, body) {
+  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Santa':'1'}, body:JSON.stringify(body||{})});
+  const j = await r.json().catch(() => ({error:'Unexpected response'}));
+  if (!r.ok) throw new Error(j.error || 'Something went wrong');
+  return j;
+}
+function toast(msg, bad) {
+  const t = document.createElement('div'); t.className = 'toast' + (bad ? ' bad' : ''); t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), bad ? 7000 : 3500);
+}
+async function act(fn) { try { await fn(); } catch (e) { toast(e.message, true); } await refresh(); }
+
+// ---------- tabs
+$('nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  ['event','santas','mail','draw','reveal'].forEach(t => $('tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
+});
+
+// ---------- state
+async function refresh() {
+  S = await (await fetch('/api/state')).json();
+  render();
+  const busy = S.job.active;
+  if (busy && !poll) poll = setInterval(refresh, 1000);
+  if (!busy && poll) { clearInterval(poll); poll = null; }
+}
+let filled = false;
+function render() {
+  if (!filled) {   // only fill inputs once so we don't clobber typing
+    for (const k in S.event) if ($('ev-'+k)) $('ev-'+k).value = S.event[k];
+    for (const k of ['preset','host','port','security','user','from_name','from_email','imap_host']) $('sm-'+k).value = S.smtp[k] ?? '';
+    $('sm-shred').checked = !!S.smtp.shred;
+    filled = true;
+  }
+  $('pwState').textContent = S.smtp.password_set ? '✅ set for this session' : '';
+  const P = S.participants, drawn = S.draw.status !== 'none';
+  $('countBadge').textContent = P.length; $('countTxt').textContent = P.length;
+  $('lockNote').classList.toggle('hidden', !drawn); $('importBox').classList.toggle('hidden', drawn);
+  $('plist').innerHTML = P.length ? `<tr><th>Name</th><th>Email</th><th>Hints for their Santa</th><th>Avoid</th><th></th></tr>` +
+    P.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.email)}</td><td class="hint">${esc(p.hints) || '<i>none</i>'}</td>
+      <td class="hint">${esc(p.avoid)}</td><td>${drawn ? '' : `<button class="btn small ghost" onclick="removeP('${p.id}')">Remove</button>`}</td></tr>`).join('')
+    : `<tr><td class="hint">No Santas yet - paste your form responses above.</td></tr>`;
+
+  // draw tab
+  $('predraw').classList.toggle('hidden', drawn); $('postdraw').classList.toggle('hidden', !drawn);
+  const smtpOk = S.smtp.host && (S.smtp.password_set || !S.smtp.user);
+  const checks = [
+    [P.length >= 3, `${P.length} Santas signed up` + (P.length < 3 ? ' (need at least 3)' : '')],
+    [!!S.smtp.host && !!S.smtp.user, 'Mailbox configured'],
+    [smtpOk, 'Mailbox password entered for this session'],
+    [true, 'Event details: ' + esc(S.event.dates)],
+  ];
+  $('checklist').innerHTML = checks.map(([ok, t]) => `<li>${ok ? '✅' : '⬜'} ${t}</li>`).join('');
+  $('drawBtn').disabled = !(P.length >= 3 && smtpOk) || S.job.active;
+
+  if (drawn) {
+    $('drawnAt').textContent = new Date(S.draw.drawn_at).toLocaleString();
+    $('fp').textContent = S.draw.fingerprint;
+    const st = id => (S.sends[id] || {}).status || 'pending';
+    const n = s => P.filter(p => st(p.id) === s).length;
+    $('st-sent').textContent = n('sent'); $('st-pending').textContent = n('pending'); $('st-failed').textContent = n('failed');
+    const burned = S.draw.key_burned || !S.vault.key;
+    $('slist').innerHTML = `<tr><th>Santa</th><th>Email</th><th>Status</th><th></th></tr>` + P.map(p => {
+      const r = S.sends[p.id] || {}; const s = st(p.id);
+      const when = r.at ? ` <span class="hint" style="font-size:12px;color:var(--muted)">${new Date(r.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>` : '';
+      const err = r.error ? `<div class="hint" style="color:var(--red-dk);font-size:12px">${esc(r.error)}</div>` : '';
+      return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.email)}</td><td><span class="pill ${s}">${s}</span>${when}${err}</td>
+        <td><button class="btn small ghost" ${burned || S.job.active ? 'disabled' : ''} onclick="send('${p.id}')">Resend</button></td></tr>`;
+    }).join('');
+    $('retryBtn').disabled = burned || S.job.active || n('sent') === P.length;
+    $('remindBtn').disabled = burned || S.job.active;
+    $('burnBtn').disabled = burned;
+    $('vaultInfo').innerHTML = burned
+      ? '🔥 The key is burned. Nobody - not even this app - can read the pairings any more. Resends, nudges and the reveal are disabled.'
+      : '🔐 Pairings sit in a sealed vault on this machine so lost letters can be resent and the Exchange Day reveal works. ' +
+        'Want extra paranoia? Once every letter is delivered, <b>burn the key</b> - the pairings become unreadable forever (you lose resend & reveal).';
+  }
+  const j = S.job;
+  $('jobBox').classList.toggle('hidden', !j.active);
+  if (j.active) { $('jobBar').style.width = (j.total ? 100 * j.done / j.total : 5) + '%'; $('jobMsg').textContent = j.message; }
+  $('jobResult').innerHTML = !j.active && j.message ? `<div class="note ${j.ok ? 'info' : 'bad'}">${j.ok ? '🎉' : '⚠️'} ${esc(j.message)}</div>` : '';
+}
+
+// ---------- actions
+function saveEvent() {
+  const ev = {}; for (const k of ['title','organisers','budget','dates','location','note']) ev[k] = $('ev-'+k).value;
+  act(async () => { await call('/api/event', ev); toast('Saved! 🎄'); });
+}
+function preview() {
+  saveEvent();
+  setTimeout(() => { $('previewFrame').src = '/api/preview?t=' + Date.now(); $('previewDlg').showModal(); }, 250);
+}
+function importCsv(mode) {
+  act(async () => {
+    const r = await call('/api/participants/import', {text: $('csv').value, mode});
+    $('importWarn').innerHTML = r.warnings.length ? `<div class="note warn">${r.warnings.map(esc).join('<br>')}</div>` : '';
+    toast(`🧑‍🎄 ${r.count} Santas on the list`); $('csv').value = '';
+  });
+}
+function addOne() {
+  const p = {name: $('add-name').value, email: $('add-email').value, hints: $('add-hints').value, avoid: $('add-avoid').value};
+  act(async () => {
+    await call('/api/participants', {participants: [...S.participants, p]});
+    ['name','email','hints','avoid'].forEach(k => $('add-'+k).value = ''); toast('Added ' + p.name);
+  });
+}
+function removeP(id) {
+  act(() => call('/api/participants', {participants: S.participants.filter(p => p.id !== id)}));
+}
+const PRESETS = {
+  gmail: {host:'smtp.gmail.com', port:587, security:'starttls', imap_host:'imap.gmail.com'},
+  outlook: {host:'smtp.office365.com', port:587, security:'starttls', imap_host:'outlook.office365.com'},
+};
+function applyPreset() {
+  const p = PRESETS[$('sm-preset').value]; if (!p) return;
+  for (const k in p) $('sm-'+k).value = p[k];
+}
+function smtpBody() {
+  const b = {}; for (const k of ['preset','host','port','security','user','from_name','from_email','imap_host','password']) b[k] = $('sm-'+k).value;
+  b.shred = $('sm-shred').checked; return b;
+}
+function saveSmtp() { act(async () => { await call('/api/smtp', smtpBody()); $('sm-password').value = ''; toast('Mailbox saved ✉️'); }); }
+function testMail() {
+  act(async () => { await call('/api/smtp', smtpBody()); $('sm-password').value = '';
+    toast('Sending test...'); await call('/api/smtp/test', {to: $('test-to').value}); toast('Test letter sent - check the inbox! 📬'); });
+}
+function drawAndSend() {
+  if (!confirm(`Draw names for ${S.participants.length} Santas and email everyone now?\n\nThe roster will be locked after this.`)) return;
+  act(async () => { const r = await call('/api/draw'); toast('Names drawn! Fingerprint ' + r.fingerprint); await call('/api/send', {which:'pending'}); });
+}
+function send(which) { act(() => call('/api/send', {which})); }
+function remind() {
+  if (!confirm('Send a nudge to every Santa?')) return;
+  act(() => call('/api/remind', {note: $('remindNote').value}));
+}
+function burn() {
+  if (!confirm('Burn the vault key?\n\nPairings become unreadable forever: no resends, no nudges, no Exchange Day reveal.\nOnly do this once everyone has confirmed they got their letter.')) return;
+  act(async () => { await call('/api/burn'); toast('🔥 Key burned. The secret is safe forever.'); });
+}
+function resetDraw() {
+  const c = prompt('This throws away the current draw. Everyone will need a NEW letter (and will know there was a redraw).\n\nType START OVER to confirm:');
+  if (c === null) return;
+  act(async () => { await call('/api/reset', {confirm: c}); toast('Draw cleared - the roster is unlocked.'); });
+}
+
+// ---------- reveal
+let chain = [], idx = 0;
+async function startReveal() {
+  try {
+    const r = await call('/api/reveal', {confirm: $('revealConfirm').value.trim().toUpperCase()});
+    chain = r.chain; idx = 0;
+    $('revealIntro').classList.add('hidden'); $('revealStage').classList.remove('hidden'); showCard();
+  } catch (e) { toast(e.message, true); }
+}
+function showCard() {
+  const c = chain[idx]; $('revCard').classList.remove('flipped');
+  setTimeout(() => {
+    $('revTo').textContent = c.receiver; $('revCode').textContent = c.codename;
+    $('revGiver').textContent = c.giver + ' 🎅'; $('revCode2').textContent = 'a.k.a. ' + c.codename;
+  }, 150);
+  $('revCounter').textContent = `Gift ${idx + 1} of ${chain.length}`;
+  $('chainlist').innerHTML = chain.map((x, i) => `<span class="${i < idx ? 'done' : ''}">${i <= idx ? esc(x.receiver) : '🎁'}</span>`).join('<span>→</span>');
+}
+function flip() { $('revCard').classList.toggle('flipped'); if ($('revCard').classList.contains('flipped')) burst(); }
+function step(d) { idx = (idx + d + chain.length) % chain.length; showCard(); }
+
+// ---------- snow + confetti
+const cv = $('snow'), cx = cv.getContext('2d'); let flakes = [], bits = [];
+function size() { cv.width = innerWidth; cv.height = innerHeight; } size(); addEventListener('resize', size);
+for (let i = 0; i < 90; i++) flakes.push({x: Math.random()*innerWidth, y: Math.random()*innerHeight, r: Math.random()*2.2+.6, s: Math.random()*.6+.25, w: Math.random()*6});
+function burst() {
+  const colors = ['#c8283a','#e0a526','#2f9a6f','#fffaf2','#ffe9a8'];
+  for (let i = 0; i < 140; i++) bits.push({x: innerWidth/2, y: innerHeight/2.2, vx: (Math.random()-.5)*14, vy: Math.random()*-12-2, c: colors[i%5], life: 120, r: Math.random()*4+2});
+}
+(function tick() {
+  cx.clearRect(0, 0, cv.width, cv.height);
+  cx.fillStyle = 'rgba(255,255,255,.75)';
+  for (const f of flakes) { f.y += f.s; f.w += .01; f.x += Math.sin(f.w)*.3; if (f.y > cv.height) { f.y = -5; f.x = Math.random()*cv.width; }
+    cx.beginPath(); cx.arc(f.x, f.y, f.r, 0, 7); cx.fill(); }
+  bits = bits.filter(b => b.life-- > 0);
+  for (const b of bits) { b.vy += .35; b.x += b.vx; b.y += b.vy; cx.fillStyle = b.c; cx.fillRect(b.x, b.y, b.r, b.r*1.6); }
+  requestAnimationFrame(tick);
+})();
+
+refresh();
+</script>
+</body>
+</html>
