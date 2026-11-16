@@ -10,7 +10,8 @@ Double-click `start.bat`, or run `python server.py`. It opens http://127.0.0.1:8
 2. **Santas**: in Google Forms go to Responses, then the ⋮ menu, then *Download responses (.csv)*, and pick that file
    (or paste the whole responses sheet, header row included). The app uses **Your name**, **E-mail**,
    **Gifts I do not want** (shown in the letter) and **...remain anonymous...** (those Santas are never unmasked
-   on Exchange Day). Other columns are ignored.
+   on Exchange Day). If the form has a **secret Santa name** question, that becomes the person's codename. Anyone who left it
+   blank gets one auto-assigned. Chosen names are never shown in the organiser screens. Other columns are ignored.
    - If the roster says it's locked from a trial run, click *Clear the old draw & unlock* first.
 3. **Mailbox**: create a **new Gmail just for this** (e.g. `blr.secret.santa@gmail.com`).
    Turn on 2-Step Verification, then make an **App Password** (myaccount.google.com/apppasswords) and paste it in.

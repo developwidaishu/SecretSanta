@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Exchange Day</title>
+<title>The Great Decapsulation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -44,16 +44,40 @@
   .dots{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:4vh;max-width:80vw}
   .dots i{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.18)}
   .dots i.done{background:var(--gold)} .dots i.now{background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.25)}
+  .kicker{color:var(--soft);font-size:clamp(13px,1.3vw,22px);letter-spacing:4px;text-transform:uppercase;margin-bottom:1.5vh}
+  /* brand */
+  .brand{position:fixed;top:2.5vh;left:0;right:0;text-align:center;z-index:2;font-family:Fraunces,Georgia,serif;font-weight:600;
+         color:var(--gold);opacity:.8;font-size:clamp(15px,1.5vw,26px);letter-spacing:1px;pointer-events:none}
+  /* Santa's sleigh: flies through the band below the brand, behind everything */
+  #sky{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  #sleigh{position:absolute;left:0;top:8vh;white-space:nowrap;font-size:clamp(20px,2.6vw,46px);line-height:1;
+          transform:translateX(110vw);opacity:.85;filter:drop-shadow(0 4px 10px rgba(0,0,0,.35))}
+  #sleigh.fly{animation:fly 26s linear forwards}
+  #sleigh .bob{display:inline-flex;align-items:flex-end;animation:bob 2.4s ease-in-out infinite}
+  #sleigh .deer{display:inline-block;margin-right:.08em}
+  #sleigh .deer:nth-child(odd){animation:gallop .6s ease-in-out infinite alternate}
+  #sleigh .deer:nth-child(even){animation:gallop .6s ease-in-out infinite alternate-reverse}
+  #sleigh .rein{display:inline-block;width:.9em;height:2px;background:linear-gradient(90deg,#e0a526,transparent);margin:0 .05em .55em 0}
+  #sleigh .ride{position:relative;display:inline-block}
+  #sleigh .ride .santa{position:absolute;left:.12em;bottom:.42em;font-size:.72em}
+  #sleigh i{font-style:normal;display:inline-block;transform:scaleX(var(--face,1))}
+  @keyframes fly{from{transform:translateX(110vw)}to{transform:translateX(calc(-100% - 10vw))}}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-1.4vh) rotate(2deg)}}
+  @keyframes gallop{from{transform:translateY(0)}to{transform:translateY(-.12em)}}
+  @media (prefers-reduced-motion:reduce){#sky{display:none}}
 </style>
 </head>
 <body>
+<div id="sky"><div id="sleigh"><span class="bob"><span class="deer"><i>🦌</i></span><span class="deer"><i>🦌</i></span><span class="deer"><i>🦌</i></span><span class="rein"></span><span class="ride" id="ride"><i>🛷</i><span class="santa">🎅</span></span></span></div></div>
 <canvas id="fx"></canvas>
+<div class="brand">🎅 Santa's Sleigh Desk</div>
 
 <!-- 1. unlock (do this on the laptop, before putting it on the projector) -->
 <section class="screen" id="s-lock">
   <div class="emoji">🎁</div>
-  <h1>Exchange Day</h1>
-  <p class="lead">Unlock on your laptop first, then move this window to the big screen.</p>
+  <div class="kicker">Secret Santa 2026</div>
+  <h1>The Great Decapsulation</h1>
+  <p class="lead">Every gift arrived with a spoofed source. Time to strip the headers and trace it back. 🔍</p>
   <form class="unlock" onsubmit="unlock(event)">
     <input id="pass" placeholder="Type REVEAL" autocomplete="off" autofocus>
     <button>Unlock</button>
@@ -64,7 +88,8 @@
 <!-- 2. title slide -->
 <section class="screen hidden" id="s-ready">
   <div class="emoji">🎅🎁🎄</div>
-  <h1>Who's behind the codename?</h1>
+  <div class="kicker">The Great Decapsulation</div>
+  <h1>Who's the real source?</h1>
   <p class="lead" id="readyTxt"></p>
 </section>
 
@@ -75,7 +100,7 @@
     <div class="inner">
       <div class="face front"><small>A gift for</small><div class="big" id="to"></div>
         <div class="to">from <b id="code"></b></div><div class="ask">Who could it be? 🤔</div></div>
-      <div class="face back"><small>Behind the codename</small><div class="big" id="giver"></div><div class="to" id="code2"></div></div>
+      <div class="face back"><small>Real source</small><div class="big" id="giver"></div><div class="to" id="code2"></div></div>
     </div>
   </div>
   <div class="dots" id="dots"></div>
@@ -85,7 +110,7 @@
 <section class="screen hidden" id="s-end">
   <div class="emoji">🎄✨</div>
   <h1>Merry Christmas!</h1>
-  <p class="lead">Every gift has found its home. Thank you, Santas!</p>
+  <p class="lead">All gifts delivered. Zero packet loss. Thank you, Santas! 🎄</p>
 </section>
 
 <div class="hint" id="hint"><kbd>→</kbd> / <kbd>Space</kbd> next &nbsp;·&nbsp; <kbd>←</kbd> back &nbsp;·&nbsp; <kbd>F</kbd> full screen</div>
@@ -103,7 +128,7 @@ async function unlock(e) {
     const j = await r.json().catch(() => ({error: 'Unexpected response'}));
     if (!r.ok) throw new Error(j.error || 'Something went wrong');
     gifts = j.chain; $('pass').value = '';
-    $('readyTxt').textContent = `${gifts.length} gifts to unmask · press → to begin`;
+    $('readyTxt').textContent = `${gifts.length} gifts to decapsulate · press → to begin`;
     pos = 0; show(); $('pass').blur();
   } catch (err) { $('err').textContent = err.message; }
 }
@@ -121,7 +146,7 @@ function show(fromPos) {
     const g = gifts[i];
     $('to').textContent = g.receiver; $('code').textContent = g.codename;
     $('giver').textContent = g.anonymous ? 'A secret Santa 🤫' : g.giver + ' 🎅';
-    $('code2').textContent = g.anonymous ? g.codename + ' chose to stay anonymous' : 'a.k.a. ' + g.codename;
+    $('code2').textContent = g.anonymous ? g.codename + ' chose to stay encrypted 🔒' : 'a.k.a. ' + g.codename;
     void card.offsetWidth; card.classList.remove('swap');
   } else {
     card.classList.toggle('flipped', back);
@@ -151,7 +176,8 @@ let hideT; addEventListener('mousemove', () => { $('hint').style.opacity = 1; do
   clearTimeout(hideT); hideT = setTimeout(() => { if (gifts.length) { $('hint').style.opacity = 0; document.body.style.cursor = 'none'; } }, 2500); });
 
 // snow + confetti
-const cv = $('fx'), cx = cv.getContext('2d'); let flakes = [], bits = [];
+const cv = $('fx'), cx = cv.getContext('2d'); let flakes = [], bits = [], dust = [];
+const sleigh = $('sleigh');
 function size() { cv.width = innerWidth; cv.height = innerHeight; } size(); addEventListener('resize', size);
 for (let i = 0; i < 120; i++) flakes.push({x: Math.random() * innerWidth, y: Math.random() * innerHeight, r: Math.random() * 2.6 + .6, s: Math.random() * .7 + .25, w: Math.random() * 6});
 function burst(count) {
@@ -166,8 +192,25 @@ function burst(count) {
     cx.beginPath(); cx.arc(f.x, f.y, f.r, 0, 7); cx.fill(); }
   bits = bits.filter(b => b.life-- > 0);
   for (const b of bits) { b.vy += .4; b.x += b.vx; b.y += b.vy; cx.fillStyle = b.c; cx.fillRect(b.x, b.y, b.r, b.r * 1.6); }
+  // golden stardust behind the sleigh
+  if (sleigh.classList.contains('fly')) {
+    const r = $('ride').getBoundingClientRect();
+    if (r.right > 0 && r.left < innerWidth && Math.random() < .7)
+      dust.push({x: r.right - r.width * .1, y: r.top + r.height * (.4 + Math.random() * .5), life: 70, max: 70, r: Math.random() * 2.2 + .8});
+  }
+  dust = dust.filter(d => d.life-- > 0);
+  for (const d of dust) { d.y += .25; cx.fillStyle = `rgba(255,220,130,${(d.life / d.max) * .8})`; cx.beginPath(); cx.arc(d.x, d.y, d.r, 0, 7); cx.fill(); }
   requestAnimationFrame(tick);
 })();
+
+// Santa's sleigh crosses the sky now and then, high up and behind the text
+function launchSleigh() {
+  sleigh.classList.remove('fly'); void sleigh.offsetWidth;
+  sleigh.style.top = (7.5 + Math.random() * 2.5) + 'vh';
+  sleigh.classList.add('fly');
+}
+sleigh.addEventListener('animationend', e => { if (e.animationName === 'fly') setTimeout(launchSleigh, 5000 + Math.random() * 9000); });
+setTimeout(launchSleigh, 1500);
 </script>
 </body>
 </html>

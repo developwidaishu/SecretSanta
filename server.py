@@ -192,14 +192,16 @@ def parse_roster(text):
     i_email = find(lambda h: "e-mail" in h or "email" in h or h == "mail")
     has_header = i_email is not None and not any("@" in c for c in rows[0])
     if has_header:
-        i_name = find(lambda h: re.search(r"\bname\b", h) and "email" not in h and "user" not in h)
+        i_code = find(is_codename_header)
+        i_name = find(lambda h: re.search(r"\bname\b", h) and "email" not in h and "user" not in h
+                      and not is_codename_header(h))
         i_nogift = find(lambda h: "gift" in h and ("not want" in h or "don't want" in h or "dont want" in h
                                                     or "do not" in h or "avoid" in h))
         i_hint = find(lambda h: any(w in h for w in ("wish", "hint", "interest"))) if i_nogift is None else None
         i_anon = find(lambda h: "anonym" in h)
         body = rows[1:]
     else:
-        i_name, i_email, i_nogift, i_hint, i_anon = 0, 1, 2, None, None
+        i_name, i_email, i_nogift, i_hint, i_anon, i_code = 0, 1, 2, None, None, None
         body = rows
 
     people, warnings, seen = [], [], {}
@@ -213,14 +215,41 @@ def parse_roster(text):
             continue
         p = {"id": secrets.token_hex(6), "name": name or name_from_email(email),
              "email": email, "hints": cell(i_nogift) or cell(i_hint), "avoid": "",
-             "anonymous": cell(i_anon).lower().startswith("y")}
+             "anonymous": cell(i_anon).lower().startswith("y"), "codename": clean_codename(cell(i_code))}
         if email in seen:
             warnings.append(f"Row {n}: '{email}' appeared again - kept the latest response.")
             people[seen[email]] = p
         else:
             seen[email] = len(people)
             people.append(p)
+    # Duplicate secret names would confuse Exchange Day. Report the row only, never the name itself.
+    taken = set()
+    for p in people:
+        key = p["codename"].lower()
+        if key and key in taken:
+            warnings.append(f"{p['name']} picked a secret name someone else already chose - "
+                            "they'll get a number added to theirs.")
+        taken.add(key)
     return people, warnings
+
+
+def is_codename_header(h):
+    return (any(w in h for w in ("codename", "code name", "alias", "nickname", "secret name", "santa name"))
+            or (bool(re.search(r"\bname\b", h)) and ("secret" in h or "santa" in h)))
+
+
+# Answers that mean "I didn't pick one" - these get an auto-assigned codename instead.
+NO_CODENAME = {"na", "nil", "none", "no", "nope", "nothing", "null", "nan", "x", "0", "idk", "skip", "notapplicable",
+               "nopreference", "noname", "nonamechosen", "auto", "random", "any", "anything", "pickforme", "chooseforme",
+               "youpick", "youchoose", "surpriseme", "yourchoice", "notneeded", "notrequired", "blank", "empty", "tbd"}
+
+
+def clean_codename(s):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    key = re.sub(r"[^a-z0-9]", "", s.lower())
+    if not key or key in NO_CODENAME:   # blank, "-", "N/A", "n.a.", "None", "--", "?" ...
+        return ""
+    return s[:60]
 
 
 def clean_participants(items):
@@ -235,7 +264,7 @@ def clean_participants(items):
         seen.add(email)
         out.append({"id": p.get("id") or secrets.token_hex(6), "name": name, "email": email,
                     "hints": str(p.get("hints", "")).strip(), "avoid": str(p.get("avoid", "")).strip(),
-                    "anonymous": bool(p.get("anonymous"))})
+                    "anonymous": bool(p.get("anonymous")), "codename": clean_codename(p.get("codename"))})
     return out
 
 
@@ -279,11 +308,24 @@ def do_draw(people):
             break
     else:
         raise ApiError("Couldn't find a valid draw with these 'avoid' rules. Try loosening a few.")
-    combos = [f"Agent {a} {b}" for a in ADJ for b in NOUN]
-    names = rng.sample(combos, min(n, len(combos)))
-    while len(names) < n:
-        names.append(f"Agent {rng.choice(ADJ)} {rng.choice(NOUN)} #{len(names)}")
-    return {"chain": list(ids), "codenames": dict(zip(ids, names)),
+    # Santas who chose their own secret name keep it; everyone else gets an auto-assigned one.
+    codenames, used = {}, set()
+    for p in people:
+        own = clean_codename(p.get("codename"))
+        if own:
+            name, k = own, 2
+            while name.lower() in used:
+                name, k = f"{own} #{k}", k + 1
+            codenames[p["id"]] = name
+            used.add(name.lower())
+    combos = [c for c in (f"Agent {a} {b}" for a in ADJ for b in NOUN) if c.lower() not in used]
+    rng.shuffle(combos)
+    for p in people:
+        if p["id"] not in codenames:
+            name = combos.pop() if combos else f"Agent {rng.choice(ADJ)} {rng.choice(NOUN)} #{len(used) + 1}"
+            codenames[p["id"]] = name
+            used.add(name.lower())
+    return {"chain": list(ids), "codenames": codenames,
             "drawn_at": datetime.now().isoformat(timespec="seconds")}
 
 
@@ -589,6 +631,9 @@ def send_batch(target_ids, kind, note=""):
 
 def public_state():
     st = load_state()
+    # Organisers only learn *whether* someone chose a secret name, never the name itself.
+    st["participants"] = [{**{k: v for k, v in p.items() if k != "codename"}, "has_codename": bool(p.get("codename"))}
+                          for p in st["participants"]]
     st["smtp"]["password_set"] = bool(SECRETS_IN_MEMORY["smtp_password"])
     st["vault"] = {"exists": os.path.exists(VAULT_FILE), "key": os.path.exists(KEY_FILE)}
     with LOCK:
@@ -634,7 +679,12 @@ def api(path, body):
 
         if path == "/api/participants":
             require_no_draw(st)
-            st["participants"] = clean_participants(body.get("participants", []))
+            incoming = body.get("participants", [])
+            old = {p["id"]: p for p in st["participants"]}
+            for p in incoming:  # the page never sees secret names, so carry them over
+                if "codename" not in p and p.get("id") in old:
+                    p["codename"] = old[p["id"]].get("codename", "")
+            st["participants"] = clean_participants(incoming)
             save_state(st)
             return {"ok": True}
 

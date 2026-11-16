@@ -116,7 +116,9 @@
     <h2>Who's playing?</h2>
     <p class="sub">Import your Google Form responses. The elves use <b>Your name</b>, <b>E-mail</b>,
       <b>Gifts I do not want</b> (it goes into the letter) and <b>Do you want your Santa identity to remain anonymous</b>
-      (those Santas are never unmasked on Exchange Day). Other columns are ignored.</p>
+      (those Santas are never unmasked on Exchange Day). If the form asks for a <b>secret Santa name</b>, that's used as
+      the person's codename. Anyone who left it blank gets one auto-assigned. Other columns are ignored.
+      Chosen secret names are never shown on this page, so organisers can't match a gift tag to a person.</p>
     <div id="lockNote" class="note warn hidden">🔒 Names are already drawn, so the roster is locked. That way nobody can quietly change an email address to intercept a letter.
       <div style="margin-top:8px">Was that just a trial run? <button class="btn small red" onclick="resetDraw()">↺ Clear the old draw &amp; unlock</button></div></div>
     <div id="importBox">
@@ -285,8 +287,9 @@ function render() {
   const P = S.participants, drawn = S.draw.status !== 'none';
   $('countBadge').textContent = P.length; $('countTxt').textContent = P.length;
   $('lockNote').classList.toggle('hidden', !drawn); $('importBox').classList.toggle('hidden', drawn);
-  $('plist').innerHTML = P.length ? `<tr><th>Name</th><th>Email</th><th>Gifts they don't want</th><th>Anonymous?</th><th></th></tr>` +
+  $('plist').innerHTML = P.length ? `<tr><th>Name</th><th>Email</th><th>Gifts they don't want</th><th>Secret name</th><th>Anonymous?</th><th></th></tr>` +
     P.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.email)}</td><td class="hint">${esc(p.hints) || '<i>none</i>'}</td>
+      <td class="hint">${p.has_codename ? '🔒 Chose their own' : 'Auto-assigned'}</td>
       <td class="hint">${p.anonymous ? '🤫 Yes' : 'No'}</td><td>${drawn ? '' : `<button class="btn small ghost" onclick="removeP('${p.id}')">Remove</button>`}</td></tr>`).join('')
     : `<tr><td class="hint">No Santas yet - paste your form responses above.</td></tr>`;
 
