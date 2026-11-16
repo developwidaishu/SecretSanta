@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Secret Santa Workshop - a tiny local web app.
+Santa's Sleigh Desk - a tiny local web app.
 
   * Organisers manage the event + roster, but never see who got whom.
   * The draw happens on this machine; each Santa gets their giftee by email.
@@ -186,17 +186,21 @@ def parse_roster(text):
                 return i
         return None
 
-    i_email = find(lambda h: "email" in h or "e-mail" in h or h == "mail")
+    # Matches the sign-up form: "Your name", "E-mail", "Gifts I do not want (optional):",
+    # "Do you want your Santa identity to remain anonymous even after the final day?".
+    # Other questions (daily fun tasks, in office on exchange day) aren't needed for the draw.
+    i_email = find(lambda h: "e-mail" in h or "email" in h or h == "mail")
     has_header = i_email is not None and not any("@" in c for c in rows[0])
     if has_header:
-        i_name = find(lambda h: "name" in h and "email" not in h and "user" not in h)
-        i_hint = find(lambda h: any(w in h for w in ("wish", "hint", "like", "interest", "love", "about", "santa should")))
-        i_avoid = find(lambda h: any(w in h for w in ("avoid", "exclude", "not gift", "don't", "dont")))
+        i_name = find(lambda h: re.search(r"\bname\b", h) and "email" not in h and "user" not in h)
+        i_nogift = find(lambda h: "gift" in h and ("not want" in h or "don't want" in h or "dont want" in h
+                                                    or "do not" in h or "avoid" in h))
+        i_hint = find(lambda h: any(w in h for w in ("wish", "hint", "interest"))) if i_nogift is None else None
+        i_anon = find(lambda h: "anonym" in h)
         body = rows[1:]
     else:
-        i_name, i_email, i_hint, i_avoid = 0, 1, 2, 3
+        i_name, i_email, i_nogift, i_hint, i_anon = 0, 1, 2, None, None
         body = rows
-    # No name question on the form? Derive one from the email (priya.sharma@... -> Priya Sharma).
 
     people, warnings, seen = [], [], {}
     for n, r in enumerate(body, start=2 if has_header else 1):
@@ -208,7 +212,8 @@ def parse_roster(text):
             warnings.append(f"Row {n}: skipped '{name or '?'}' - invalid email '{email}'.")
             continue
         p = {"id": secrets.token_hex(6), "name": name or name_from_email(email),
-             "email": email, "hints": cell(i_hint), "avoid": cell(i_avoid)}
+             "email": email, "hints": cell(i_nogift) or cell(i_hint), "avoid": "",
+             "anonymous": cell(i_anon).lower().startswith("y")}
         if email in seen:
             warnings.append(f"Row {n}: '{email}' appeared again - kept the latest response.")
             people[seen[email]] = p
@@ -229,7 +234,8 @@ def clean_participants(items):
             raise ApiError(f"Duplicate email: {email}")
         seen.add(email)
         out.append({"id": p.get("id") or secrets.token_hex(6), "name": name, "email": email,
-                    "hints": str(p.get("hints", "")).strip(), "avoid": str(p.get("avoid", "")).strip()})
+                    "hints": str(p.get("hints", "")).strip(), "avoid": str(p.get("avoid", "")).strip(),
+                    "anonymous": bool(p.get("anonymous"))})
     return out
 
 
@@ -304,7 +310,14 @@ def render_email(event, giver, receiver, codename, kind="assignment", note=""):
         lead = "The robot elves have drawn the names, and your top-secret mission is to bring joy to:"
     hints = receiver.get("hints", "").strip()
     hints_html = (_e(hints).replace("\n", "<br>") if hints else
-                  f"{_e(rf)} kept it mysterious! Time for some friendly detective work \U0001F575️")
+                  f"No gift no-gos from {_e(rf)} - anything thoughtful will do! \U0001F381")
+    if giver.get("anonymous"):
+        unmask_html = ("You asked to stay anonymous, so your codename will <b>not</b> be unmasked on the final day "
+                       "- your secret stays safe forever \U0001F92B")
+        unmask_text = "You asked to stay anonymous, so your codename will NOT be unmasked on the final day."
+    else:
+        unmask_html = "On the final day we'll unmask the codenames - until then, stay in character!"
+        unmask_text = "On the final day we'll unmask the codenames - until then, stay in character!"
     note_html = (f'<tr><td style="padding:0 32px 8px"><div style="background:#fff7e0;border-left:4px solid #e0a526;'
                  f'padding:12px 16px;border-radius:8px;color:#5b4a1d;font-size:14px">'
                  f'<b>Note from the organisers:</b><br>{_e(note).replace(chr(10), "<br>")}</div></td></tr>'
@@ -332,7 +345,7 @@ def render_email(event, giver, receiver, codename, kind="assignment", note=""):
    </div>
  </td></tr>
  <tr><td style="padding:12px 32px 8px;color:#2b2420;font-size:15px;line-height:1.55">
-   <div style="font-weight:700;color:#155d43;margin-bottom:4px">\U0001F4DD Hints from {_e(rf)}</div>
+   <div style="font-weight:700;color:#155d43;margin-bottom:4px">\U0001F6AB Gifts {_e(rf)} would rather not get</div>
    <div style="background:#eef6f1;border-radius:10px;padding:12px 16px">{hints_html}</div>
  </td></tr>
  <tr><td style="padding:12px 32px 8px;color:#2b2420;font-size:15px;line-height:1.55">
@@ -340,14 +353,12 @@ def render_email(event, giver, receiver, codename, kind="assignment", note=""):
    <div style="background:#1b3a30;color:#ffe9a8;border-radius:10px;padding:14px 16px;font-size:18px;font-weight:700;text-align:center">{_e(codename)}</div>
    <div style="font-size:13px;color:#7a6b5d;margin-top:8px">Sign your gift tag as
      <b>&ldquo;To {_e(receiver["name"])} &middot; From {_e(codename)}&rdquo;</b>.
-     On exchange day we'll unmask every codename - until then, stay in character!</div>
+     {unmask_html}</div>
  </td></tr>
  {note_html}
  <tr><td style="padding:12px 32px 4px">
    <table role="presentation" width="100%" style="font-size:14px;color:#2b2420;border-top:1px solid #eadfcd;padding-top:10px">
-     <tr><td style="padding:4px 0;color:#7a6b5d;width:120px">Budget</td><td style="padding:4px 0">{_e(event.get("budget"))}</td></tr>
-     <tr><td style="padding:4px 0;color:#7a6b5d">Exchange</td><td style="padding:4px 0">{_e(event.get("dates"))}</td></tr>
-     <tr><td style="padding:4px 0;color:#7a6b5d">Where</td><td style="padding:4px 0">{_e(event.get("location"))}</td></tr>
+     <tr><td style="padding:4px 0;color:#7a6b5d;width:120px">Exchange</td><td style="padding:4px 0">{_e(event.get("dates"))}</td></tr>
      {ev_note}
    </table>
  </td></tr>
@@ -361,10 +372,11 @@ def render_email(event, giver, receiver, codename, kind="assignment", note=""):
 
     plain_head = html.unescape(headline)
     text = (f"{plain_head}\n\n{lead}\n\n    >>> {receiver['name']} <<<\n\n"
-            f"Hints from {rf}:\n{hints or '(none - time for some detective work!)'}\n\n"
-            f"Your Santa codename: {codename}\nSign the gift tag: \"To {receiver['name']} - From {codename}\"\n\n"
+            f"Gifts {rf} would rather not get:\n{hints or '(none - anything thoughtful will do!)'}\n\n"
+            f"Your Santa codename: {codename}\nSign the gift tag: \"To {receiver['name']} - From {codename}\"\n"
+            f"{unmask_text}\n\n"
             + (f"Note from the organisers:\n{note}\n\n" if note.strip() else "")
-            + f"Budget:   {event.get('budget')}\nExchange: {event.get('dates')}\nWhere:    {event.get('location')}\n"
+            + f"Exchange: {event.get('dates')}\n"
             + (f"Also:     {event.get('note')}\n" if event.get("note", "").strip() else "")
             + "\nNot even the organisers know who you got. Please keep the secret!\n")
     return subject, text, body
@@ -645,7 +657,7 @@ def api(path, body):
                 raise ApiError("Enter a valid address to send the test to.")
             cfg = st["smtp"]
             dummy_g = {"name": "Test Santa", "email": to}
-            dummy_r = {"name": "A. Mystery Person", "hints": "This is a TEST letter - no real names inside.\nLoves: fairy lights, filter coffee"}
+            dummy_r = {"name": "Jingle Bells", "hints": "This is a TEST letter - no real names inside.\nMugs, scented candles"}
             subject, text, body_html = render_email(st["event"], dummy_g, dummy_r, "Agent Twinkly Penguin")
             msg = build_message(cfg, "Test Santa", to, "[TEST] " + subject, text, body_html)
             s = smtp_connect(cfg)
@@ -663,7 +675,13 @@ def api(path, body):
             st["draw"] = {"status": "drawn", "drawn_at": vault["drawn_at"], "fingerprint": fp, "key_burned": False}
             st["sends"] = {p["id"]: {"status": "pending"} for p in people}
             save_state(st)
-            return {"ok": True, "fingerprint": fp}
+            by_id = {p["id"]: p["name"] for p in people}
+            chain = vault["chain"]
+            lines = [f"{st['event'].get('title', 'Secret Santa')} - draw list",
+                     f"Drawn {vault['drawn_at'].replace('T', ' ')} - fingerprint {fp}", ""]
+            lines += [f"{i + 1}) {by_id[g]} will be gifting {by_id[chain[(i + 1) % len(chain)]]}"
+                      for i, g in enumerate(chain)]
+            return {"ok": True, "fingerprint": fp, "list": "\r\n".join(lines) + "\r\n"}
 
         if path == "/api/send":
             if st["draw"]["status"] == "none":
@@ -700,8 +718,10 @@ def api(path, body):
             out = []
             for i, g in enumerate(chain):
                 r = chain[(i + 1) % len(chain)]
-                out.append({"giver": people[g]["name"], "receiver": people[r]["name"],
-                            "codename": vault["codenames"][g]})
+                anon = bool(people[g].get("anonymous"))
+                out.append({"giver": None if anon else people[g]["name"], "receiver": people[r]["name"],
+                            "codename": vault["codenames"][g], "anonymous": anon})
+            secrets.SystemRandom().shuffle(out)  # random reveal order, so the gift loop isn't visible
             return {"ok": True, "chain": out}
 
         if path == "/api/burn":
@@ -730,7 +750,7 @@ def api(path, body):
 def preview_html():
     st = load_state()
     g = {"name": "Your Name", "email": "you@example.com"}
-    r = {"name": "Your Mystery Giftee", "hints": "Loves: filter coffee, indoor plants, sci-fi novels\nNot a fan of: scented candles"}
+    r = {"name": "Jingle Bells", "hints": "Mugs, scented candles, anything with chocolate"}
     return render_email(st["event"], g, r, "Agent Frosty Reindeer")[2]
 
 
@@ -759,6 +779,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             with open(os.path.join(BASE, "index.html"), "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
+        if path in ("/reveal", "/reveal.html"):
+            with open(os.path.join(BASE, "reveal.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if path == "/api/state":
             return self._send(200, json.dumps(public_state()))
@@ -793,13 +816,13 @@ def main():
     os.makedirs(DATA, exist_ok=True)
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://{HOST}:{PORT}/"
-    print(f"\n  \U0001F385  Secret Santa Workshop is open at {url}\n      (Ctrl+C to close the workshop)\n")
+    print(f"\n  \U0001F385  Santa's Sleigh Desk is open at {url}\n      (Ctrl+C to close the desk)\n")
     if not os.environ.get("SANTA_NO_BROWSER"):
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        print("\n  Workshop closed. Merry Christmas!")
+        print("\n  Sleigh Desk closed. Merry Christmas!")
 
 
 if __name__ == "__main__":
