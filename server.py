@@ -9,6 +9,7 @@ Santa's Sleigh Desk - a tiny local web app.
 
 Run:  python server.py      (no pip installs needed - Python 3.9+ stdlib only)
 """
+import base64
 import csv
 import hashlib
 import hmac
@@ -74,7 +75,7 @@ def default_state():
             "shred": True,
             "imap_host": "imap.gmail.com",
         },
-        "draw": {"status": "none", "drawn_at": None, "fingerprint": None, "key_burned": False},
+        "draw": {"status": "none", "drawn_at": None, "fingerprint": None, "key_burned": False, "late_batches": []},
         "sends": {},
     }
 
@@ -157,6 +158,158 @@ def read_vault():
     with open(VAULT_FILE, "rb") as f:
         blob = f.read()
     return json.loads(unseal(key, blob).decode("utf-8"))
+
+
+# --------------------------------------------------------------------------- backups & history
+# A snapshot is everything needed to carry on: the roster/state plus the sealed vault and its key.
+# Automatic history lives next to the vault (same protection as the vault itself).
+# Downloaded backup files are locked with a passphrase the organiser chooses.
+
+HISTORY_KEEP = 80
+BACKUP_APP = "santas-sleigh-desk-backup"
+
+
+def history_dir():
+    return os.path.join(DATA, "history")
+
+
+def _read_bytes(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def take_snapshot():
+    b64 = lambda b: base64.b64encode(b).decode("ascii") if b is not None else None
+    return {"state": load_state(), "vault": b64(_read_bytes(VAULT_FILE)), "key": b64(_read_bytes(KEY_FILE))}
+
+
+def apply_snapshot(snap):
+    st = snap.get("state")
+    if not isinstance(st, dict) or not isinstance(st.get("participants"), list) or not isinstance(st.get("draw"), dict):
+        raise ApiError("That backup doesn't look like a Sleigh Desk backup.")
+    os.makedirs(DATA, exist_ok=True)
+    for path, val in ((VAULT_FILE, snap.get("vault")), (KEY_FILE, snap.get("key"))):
+        if val:
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(val))
+        elif os.path.exists(path):
+            os.remove(path)
+    if not snap.get("key") and st["draw"].get("status") != "none":
+        st["draw"]["key_burned"] = True
+    save_state(st)
+
+
+def summary_of(st):
+    P = st["participants"]
+    if st["draw"].get("status") == "none":
+        return f"{len(P)} Santas - not drawn yet"
+    sent = sum(1 for x in st["sends"].values() if x.get("status") == "sent")
+    drawn = [p for p in P if not is_waiting(p)]
+    parts = [f"{len(P)} Santas", f"{sent} of {len(drawn)} letters sent"]
+    loops = len(st["draw"].get("late_batches") or [])
+    if loops:
+        parts.append(f"{loops} late loop{'s' if loops > 1 else ''}")
+    waiting = len(P) - len(drawn)
+    if waiting:
+        parts.append(f"{waiting} late joiner{'s' if waiting > 1 else ''} not drawn yet")
+    if st["draw"].get("key_burned"):
+        parts.append("key burned")
+    return " - ".join(parts)
+
+
+def save_history(reason):
+    """Keeps an automatic restore point. Never lets a failure here break the real action."""
+    try:
+        with LOCK:
+            snap = take_snapshot()
+            os.makedirs(history_dir(), exist_ok=True)
+            now = datetime.now()
+            hid = now.strftime("%Y%m%d-%H%M%S-%f")
+            rec = {"id": hid, "at": now.isoformat(timespec="seconds"), "reason": reason,
+                   "summary": summary_of(snap["state"]), "snapshot": snap}
+            with open(os.path.join(history_dir(), hid + ".json"), "w", encoding="utf-8") as f:
+                json.dump(rec, f, ensure_ascii=False)
+            files = sorted(n for n in os.listdir(history_dir()) if n.endswith(".json"))
+            for old in files[:-HISTORY_KEEP]:
+                os.remove(os.path.join(history_dir(), old))
+    except Exception:
+        traceback.print_exc()
+
+
+def _history_files():
+    d = history_dir()
+    if not os.path.isdir(d):
+        return []
+    return sorted((n for n in os.listdir(d) if n.endswith(".json")), reverse=True)
+
+
+def list_history():
+    out = []
+    for n in _history_files():
+        try:
+            with open(os.path.join(history_dir(), n), "r", encoding="utf-8") as f:
+                r = json.load(f)
+            out.append({"id": r["id"], "at": r["at"], "reason": r["reason"], "summary": r["summary"]})
+        except Exception:
+            continue
+    return out
+
+
+def load_history(hid):
+    if not re.fullmatch(r"[0-9-]+", hid or ""):
+        raise ApiError("Unknown restore point.")
+    path = os.path.join(history_dir(), hid + ".json")
+    if not os.path.exists(path):
+        raise ApiError("That restore point no longer exists.")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def strip_history_keys():
+    """Burning the key must also burn every copy of it in the automatic history."""
+    for n in _history_files():
+        path = os.path.join(history_dir(), n)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                r = json.load(f)
+            if r["snapshot"].get("key"):
+                r["snapshot"]["key"] = None
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(r, f, ensure_ascii=False)
+        except Exception:
+            traceback.print_exc()
+
+
+def _pass_key(passphrase, salt):
+    return hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), salt, 300_000)
+
+
+def export_backup(passphrase):
+    if len(passphrase or "") < 6:
+        raise ApiError("Pick a passphrase of at least 6 characters - you'll need it to restore.")
+    snap = take_snapshot()
+    salt = secrets.token_bytes(16)
+    blob = seal(_pass_key(passphrase, salt), json.dumps(snap).encode("utf-8"))
+    created = datetime.now().isoformat(timespec="seconds")
+    return {"app": BACKUP_APP, "version": 1, "created": created,
+            "summary": summary_of(snap["state"]),   # readable label only - no names, no pairings
+            "salt": base64.b64encode(salt).decode("ascii"), "data": base64.b64encode(blob).decode("ascii")}
+
+
+def open_backup(text, passphrase):
+    try:
+        f = json.loads(text)
+        if f.get("app") != BACKUP_APP:
+            raise ValueError
+        salt, blob = base64.b64decode(f["salt"]), base64.b64decode(f["data"])
+    except Exception:
+        raise ApiError("That file isn't a Sleigh Desk backup (.json downloaded from the Backups tab).")
+    try:
+        return json.loads(unseal(_pass_key(passphrase or "", salt), blob).decode("utf-8"))
+    except ApiError:
+        raise ApiError("Wrong passphrase for this backup (or the file was changed).")
 
 
 # --------------------------------------------------------------------------- roster
@@ -293,23 +446,42 @@ def blocked_pairs(people):
     return blocked
 
 
-def do_draw(people):
-    """One big loop: A -> B -> C -> ... -> A. No self-gifting, no mutual pairs, and the
-    gift exchange can run as a single chain on the day."""
+def make_circle(people, rng, min_size=3):
+    """One loop: A -> B -> C -> ... -> A. No self-gifting. With min_size=2 a two-person swap is allowed
+    (used for late joiners - their letters never say they're in a separate loop)."""
     n = len(people)
-    if n < 3:
-        raise ApiError("You need at least 3 Santas for a proper secret draw.")
-    rng = secrets.SystemRandom()
+    if n < min_size:
+        raise ApiError(f"You need at least {min_size} Santas for a proper secret draw.")
     blocked = blocked_pairs(people)
     ids = [p["id"] for p in people]
     for _ in range(100000):
         rng.shuffle(ids)
         if all((ids[i], ids[(i + 1) % n]) not in blocked for i in range(n)):
-            break
-    else:
-        raise ApiError("Couldn't find a valid draw with these 'avoid' rules. Try loosening a few.")
-    # Santas who chose their own secret name keep it; everyone else gets an auto-assigned one.
-    codenames, used = {}, set()
+            return list(ids)
+    raise ApiError("Couldn't find a valid draw with these 'avoid' rules. Try loosening a few.")
+
+
+def do_draw(people):
+    """The main draw: one big loop through the whole office."""
+    rng = secrets.SystemRandom()
+    ids = make_circle(people, rng)
+    return {"chain": ids, "codenames": assign_codenames(people, set(), rng),
+            "drawn_at": datetime.now().isoformat(timespec="seconds")}
+
+
+def circles_of(vault):
+    """The main loop plus any late-joiner loops. Each loop is closed on its own."""
+    return [vault["chain"]] + [c["chain"] for c in vault.get("late", [])]
+
+
+def receiver_map(vault):
+    return {g: c[(i + 1) % len(c)] for c in circles_of(vault) for i, g in enumerate(c)}
+
+
+def assign_codenames(people, used, rng):
+    """Santas who chose their own secret name keep it; everyone else gets an auto-assigned one.
+    `used` holds names (lower-case) already taken by earlier draws."""
+    codenames, used = {}, set(used)
     for p in people:
         own = clean_codename(p.get("codename"))
         if own:
@@ -325,8 +497,14 @@ def do_draw(people):
             name = combos.pop() if combos else f"Agent {rng.choice(ADJ)} {rng.choice(NOUN)} #{len(used) + 1}"
             codenames[p["id"]] = name
             used.add(name.lower())
-    return {"chain": list(ids), "codenames": codenames,
-            "drawn_at": datetime.now().isoformat(timespec="seconds")}
+    return codenames
+
+
+def draw_list_text(title, heading, stamp, fp, chain, by_id):
+    lines = [f"{title} - {heading}", f"Drawn {stamp.replace('T', ' ')} - fingerprint {fp}", ""]
+    lines += [f"{i + 1}) {by_id[g]} will be gifting {by_id[chain[(i + 1) % len(chain)]]}"
+              for i, g in enumerate(chain)]
+    return "\r\n".join(lines) + "\r\n"
 
 
 # --------------------------------------------------------------------------- emails
@@ -558,8 +736,8 @@ def send_batch(target_ids, kind, note=""):
         st = load_state()
     vault = read_vault()
     people = {p["id"]: p for p in st["participants"]}
-    chain = vault["chain"]
-    receiver_of = {g: chain[(i + 1) % len(chain)] for i, g in enumerate(chain)}
+    receiver_of = receiver_map(vault)
+    target_ids = [pid for pid in target_ids if pid in receiver_of]
     cfg = st["smtp"]
     JOB["total"] = len(target_ids)
     sent_ids, failed, msgids = 0, 0, []
@@ -622,6 +800,7 @@ def send_batch(target_ids, kind, note=""):
         except Exception as e:
             summary += f" Couldn't shred sent copies automatically ({type(e).__name__}: {e}) - " \
                        "empty the robot mailbox's Sent folder without opening it."
+    save_history(f"After sending {label}")
     if failed:
         raise ApiError(summary)
     return summary
@@ -638,13 +817,43 @@ def public_state():
     st["vault"] = {"exists": os.path.exists(VAULT_FILE), "key": os.path.exists(KEY_FILE)}
     with LOCK:
         st["job"] = dict(JOB)
+    st["history"] = list_history()
     return st
 
 
 def require_no_draw(st):
     if st["draw"]["status"] != "none":
         raise ApiError("Names are already drawn - the roster is locked so nobody can redirect a letter. "
-                       "Use 'Start over' on the Draw tab if you really must change it.")
+                       "Add newcomers with the 'Late joiners' box instead.")
+
+
+def is_waiting(p):
+    """A late joiner who hasn't been drawn yet."""
+    return bool(p.get("late")) and not p.get("batch")
+
+
+def drawn_ids(st):
+    return [p["id"] for p in st["participants"] if not is_waiting(p)]
+
+
+def require_drawn(st):
+    if st["draw"]["status"] == "none":
+        raise ApiError("Late joiners are for after the main draw. Before the draw, just add people normally.")
+
+
+def add_late(st, people):
+    """Adds only people whose email isn't on the list yet. Never touches anyone already there."""
+    have = {p["email"] for p in st["participants"]}
+    added, skipped = [], 0
+    for p in people:
+        if p["email"] in have:
+            skipped += 1
+            continue
+        have.add(p["email"])
+        p.update(late=True, batch=None)
+        added.append(p)
+    st["participants"] += added
+    return added, skipped
 
 
 def api(path, body):
@@ -675,6 +884,7 @@ def api(path, body):
                 people = list(by_email.values())
             st["participants"] = people
             save_state(st)
+            save_history(f"Imported {len(people)} Santas")
             return {"ok": True, "count": len(people), "warnings": warnings}
 
         if path == "/api/participants":
@@ -725,25 +935,82 @@ def api(path, body):
             st["draw"] = {"status": "drawn", "drawn_at": vault["drawn_at"], "fingerprint": fp, "key_burned": False}
             st["sends"] = {p["id"]: {"status": "pending"} for p in people}
             save_state(st)
+            save_history("Main draw done")
             by_id = {p["id"]: p["name"] for p in people}
-            chain = vault["chain"]
-            lines = [f"{st['event'].get('title', 'Secret Santa')} - draw list",
-                     f"Drawn {vault['drawn_at'].replace('T', ' ')} - fingerprint {fp}", ""]
-            lines += [f"{i + 1}) {by_id[g]} will be gifting {by_id[chain[(i + 1) % len(chain)]]}"
-                      for i, g in enumerate(chain)]
-            return {"ok": True, "fingerprint": fp, "list": "\r\n".join(lines) + "\r\n"}
+            text = draw_list_text(st["event"].get("title", "Secret Santa"), "draw list",
+                                  vault["drawn_at"], fp, vault["chain"], by_id)
+            return {"ok": True, "fingerprint": fp, "list": text}
+
+        # ---- late joiners: they get their own separate loop, so nobody already drawn is touched
+        if path == "/api/late/import":
+            require_drawn(st)
+            people, warnings = parse_roster(body.get("text", ""))
+            added, skipped = add_late(st, people)
+            save_state(st)
+            if added:
+                save_history(f"Added {len(added)} late joiner{'s' if len(added) > 1 else ''}")
+            return {"ok": True, "added": len(added), "skipped": skipped, "warnings": warnings}
+
+        if path == "/api/late/add":
+            require_drawn(st)
+            p = clean_participants([{k: body.get(k) for k in ("name", "email", "hints", "anonymous")}])[0]
+            added, _ = add_late(st, [p])
+            if not added:
+                raise ApiError(f"{p['email']} is already on the list.")
+            save_state(st)
+            save_history(f"Added late joiner {p['name']}")
+            return {"ok": True}
+
+        if path == "/api/late/remove":
+            pid = body.get("id")
+            if not any(p["id"] == pid and is_waiting(p) for p in st["participants"]):
+                raise ApiError("Only late joiners who haven't been drawn yet can be removed.")
+            st["participants"] = [p for p in st["participants"] if p["id"] != pid]
+            save_state(st)
+            return {"ok": True}
+
+        if path == "/api/late/draw":
+            require_drawn(st)
+            if JOB["active"]:
+                raise ApiError("Wait for the current batch to finish.")
+            waiting = [p for p in st["participants"] if is_waiting(p)]
+            if len(waiting) < 2:
+                raise ApiError("Only 1 late joiner waiting - they need at least one more person to swap with.")
+            vault = read_vault()
+            rng = secrets.SystemRandom()
+            chain = make_circle(waiting, rng, min_size=2)
+            used = {c.lower() for c in vault["codenames"].values()}
+            codenames = assign_codenames(waiting, used, rng)
+            batch_no = len(vault.get("late", [])) + 1
+            stamp = datetime.now().isoformat(timespec="seconds")
+            vault.setdefault("late", []).append({"chain": chain, "drawn_at": stamp})
+            vault["codenames"].update(codenames)
+            fp = write_vault(vault)
+            for p in waiting:
+                p["batch"] = batch_no
+                st["sends"][p["id"]] = {"status": "pending"}
+            st["draw"]["fingerprint"] = fp
+            st["draw"].setdefault("late_batches", []).append({"batch": batch_no, "at": stamp, "count": len(waiting)})
+            save_state(st)
+            save_history(f"Late joiners drawn (loop {batch_no})")
+            by_id = {p["id"]: p["name"] for p in waiting}
+            text = draw_list_text(st["event"].get("title", "Secret Santa"), f"late joiners draw #{batch_no}",
+                                  stamp, fp, chain, by_id)
+            return {"ok": True, "fingerprint": fp, "batch": batch_no, "ids": chain, "list": text}
 
         if path == "/api/send":
             if st["draw"]["status"] == "none":
                 raise ApiError("Draw the names first.")
             which = body.get("which", "pending")
-            if which == "all":
-                ids = [p["id"] for p in st["participants"]]
+            drawn = drawn_ids(st)
+            if isinstance(body.get("ids"), list):
+                ids = [i for i in body["ids"] if i in drawn]
+            elif which == "all":
+                ids = drawn
             elif which == "pending":
-                ids = [p["id"] for p in st["participants"]
-                       if st["sends"].get(p["id"], {}).get("status") != "sent"]
+                ids = [i for i in drawn if st["sends"].get(i, {}).get("status") != "sent"]
             else:
-                ids = [which] if any(p["id"] == which for p in st["participants"]) else []
+                ids = [which] if which in drawn else []
             if not ids:
                 raise ApiError("Everyone already has their letter.")
             read_vault()  # fail fast if key burned
@@ -754,7 +1021,7 @@ def api(path, body):
             if st["draw"]["status"] == "none":
                 raise ApiError("Draw the names first.")
             read_vault()
-            ids = [p["id"] for p in st["participants"]]
+            ids = drawn_ids(st)
             note = str(body.get("note", ""))
             start_job("reminder", lambda: send_batch(ids, "reminder", note))
             return {"ok": True}
@@ -764,10 +1031,11 @@ def api(path, body):
                 raise ApiError("Type REVEAL to unmask the Santas.")
             vault = read_vault()
             people = {p["id"]: p for p in st["participants"]}
-            chain = vault["chain"]
             out = []
-            for i, g in enumerate(chain):
-                r = chain[(i + 1) % len(chain)]
+            # Main loop and late-joiner loops all go into one list, so late joiners are part of the show.
+            for g, r in receiver_map(vault).items():
+                if g not in people or r not in people:
+                    continue
                 anon = bool(people[g].get("anonymous"))
                 out.append({"giver": None if anon else people[g]["name"], "receiver": people[r]["name"],
                             "codename": vault["codenames"][g], "anonymous": anon})
@@ -779,18 +1047,41 @@ def api(path, body):
                 os.remove(KEY_FILE)
             st["draw"]["key_burned"] = True
             save_state(st)
+            strip_history_keys()
             return {"ok": True}
+
+        # ---- backups: download a passphrase-locked file, or go back to any automatic restore point
+        if path == "/api/backup/export":
+            return {"ok": True, "file": export_backup(str(body.get("passphrase", "")))}
+
+        if path in ("/api/backup/import", "/api/history/restore"):
+            if body.get("confirm") != "RESTORE":
+                raise ApiError("Type RESTORE to confirm.")
+            if JOB["active"]:
+                raise ApiError("Wait for the current batch to finish.")
+            if path == "/api/backup/import":
+                snap = open_backup(str(body.get("text", "")), str(body.get("passphrase", "")))
+            else:
+                snap = load_history(body.get("id"))["snapshot"]
+            save_history("Just before a restore (undo point)")
+            apply_snapshot(snap)
+            save_history("Restored" + (" from a backup file" if path == "/api/backup/import" else " a restore point"))
+            return {"ok": True, "summary": summary_of(load_state())}
 
         if path == "/api/reset":
             if body.get("confirm") != "START OVER":
                 raise ApiError("Type START OVER to confirm.")
             if JOB["active"]:
                 raise ApiError("Wait for the current batch to finish.")
+            save_history("Just before 'Start over' (undo point)")
             for f in (VAULT_FILE, KEY_FILE):
                 if os.path.exists(f):
                     os.remove(f)
             st["draw"] = default_state()["draw"]
             st["sends"] = {}
+            for p in st["participants"]:  # after a full redraw, late joiners are just regular Santas
+                p.pop("late", None)
+                p.pop("batch", None)
             save_state(st)
             return {"ok": True}
 

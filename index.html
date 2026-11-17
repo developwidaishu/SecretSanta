@@ -93,6 +93,7 @@
     <button data-tab="mail">✉️ Mailbox</button>
     <button data-tab="draw">🎲 Draw &amp; Send</button>
     <button data-tab="reveal">🎁 Exchange Day</button>
+    <button data-tab="backup">💾 Backups</button>
   </nav>
 
   <!-- EVENT -->
@@ -119,8 +120,28 @@
       (those Santas are never unmasked on Exchange Day). If the form asks for a <b>secret Santa name</b>, that's used as
       the person's codename. Anyone who left it blank gets one auto-assigned. Other columns are ignored.
       Chosen secret names are never shown on this page, so organisers can't match a gift tag to a person.</p>
-    <div id="lockNote" class="note warn hidden">🔒 Names are already drawn, so the roster is locked. That way nobody can quietly change an email address to intercept a letter.
+    <div id="lockNote" class="note warn hidden">🔒 Names are already drawn, so everyone already on the list is locked in. That way nobody can quietly change an email address to intercept a letter.
+      Newcomers can still join below.
       <div style="margin-top:8px">Was that just a trial run? <button class="btn small red" onclick="resetDraw()">↺ Clear the old draw &amp; unlock</button></div></div>
+    <div id="lateBox" class="hidden">
+      <h3>🛷 Late joiners</h3>
+      <div class="note info">Add people who signed up after the draw. Nobody already drawn is changed. The late joiners get
+        their own small gift loop (they give to and get from each other), and they're part of the Exchange Day reveal like everyone else.
+        Once at least 2 are waiting, draw them on the <b>Draw &amp; Send</b> tab.
+        Don't announce that late joiners form their own group.</div>
+      <div class="note info"><b>From the form:</b> download the responses .csv again and pick it here. Only people who aren't on the list yet get added.
+        <div class="row" style="margin-top:8px"><input type="file" id="lateFile" accept=".csv,.tsv,.txt,text/csv" style="max-width:340px;background:#fff">
+          <button class="btn" onclick="lateImportFile()">Add new people from file</button></div></div>
+      <div id="lateWarn"></div>
+      <div class="grid">
+        <div><label>Name</label><input id="late-name"></div>
+        <div><label>Email</label><input id="late-email"></div>
+        <div><label>Gifts they do not want</label><input id="late-hints"></div>
+        <div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-size:14px;color:var(--ink)">
+          <input type="checkbox" id="late-anon" style="width:auto"> Stay anonymous after the final day</label></div>
+      </div>
+      <div class="row"><button class="btn" onclick="lateAdd()">Add late joiner</button></div>
+    </div>
     <div id="importBox">
       <div class="note info"><b>Option 1 (easiest):</b> in Google Forms, open <i>Responses</i> → ⋮ → <i>Download responses (.csv)</i>, then pick the file:
         <div class="row" style="margin-top:8px"><input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv" style="max-width:340px;background:#fff">
@@ -205,6 +226,13 @@
       <div id="jobBox" class="hidden"><div class="progress"><i id="jobBar"></i></div><p class="sub" id="jobMsg" style="margin-top:8px"></p></div>
       <div id="jobResult"></div>
       <div class="row"><button class="btn" id="retryBtn" onclick="send('pending')">Send to everyone still waiting</button></div>
+      <div id="lateDraw" class="hidden">
+        <h3>🛷 Late joiners</h3>
+        <p class="sub" style="margin-bottom:8px">The late joiners get their own small gift loop. Nobody from the main draw is changed or emailed.
+          Only the late joiners get a letter.</p>
+        <div id="lateDrawMsg"></div>
+        <div class="row"><button class="btn" id="lateDrawBtn" onclick="lateDrawAndSend()">🎲 Draw the late joiners &amp; send their letters</button></div>
+      </div>
       <h3>Delivery status</h3>
       <p class="sub" style="margin-bottom:0">Someone lost their letter? Hit <b>Resend</b> - it goes only to their own address, and you still won't see what's inside.</p>
       <div class="tablewrap"><table class="list" id="slist"></table></div>
@@ -238,6 +266,35 @@
       <div class="row" style="justify-content:center"><button class="btn big" onclick="window.open('/reveal', 'santaReveal')">🎁 Open Exchange Day screen</button></div>
     </div>
   </section>
+
+  <!-- BACKUPS -->
+  <section id="tab-backup" class="card hidden">
+    <h2>Backups &amp; restore points</h2>
+    <p class="sub">Save everything (the Santa list, the draw, late joiners, who got their letter) and carry on later from that exact point,
+      on this laptop or another one. Restoring never sends emails by itself.</p>
+
+    <h3>💾 Download a backup file</h3>
+    <div class="note warn">The file holds the pairings, locked with the passphrase you pick here. Without the passphrase nobody can open it,
+      and neither can you, so don't lose it. Keep the file somewhere only the organiser who runs the app can reach.</div>
+    <div class="grid">
+      <div><label>Passphrase</label><input id="bk-pass" type="password" autocomplete="new-password"></div>
+      <div><label>Type it again</label><input id="bk-pass2" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="row"><button class="btn" onclick="backupDownload()">Download backup</button></div>
+
+    <h3>📂 Restore from a backup file</h3>
+    <div class="grid">
+      <div><label>Backup file (.json)</label><input type="file" id="rs-file" accept=".json,application/json" style="background:#fff"></div>
+      <div><label>Its passphrase</label><input id="rs-pass" type="password" autocomplete="off"></div>
+    </div>
+    <div class="row"><button class="btn ghost" onclick="restoreFile()">Restore from file</button></div>
+
+    <h3>🕓 Automatic restore points</h3>
+    <p class="sub" style="margin-bottom:8px">The app saves one after every import, draw, late-joiner change and batch of letters, and just before
+      any restore or start-over (so a restore can be undone too). They stay on this laptop.</p>
+    <div class="tablewrap"><table class="list" id="hlist"></table></div>
+    <div class="note info" id="burnBackupNote"></div>
+  </section>
 </div>
 
 <dialog id="previewDlg"><iframe id="previewFrame"></iframe>
@@ -264,7 +321,7 @@ async function act(fn) { try { await fn(); } catch (e) { toast(e.message, true);
 $('nav').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-  ['event','santas','mail','draw','reveal'].forEach(t => $('tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
+  ['event','santas','mail','draw','reveal','backup'].forEach(t => $('tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
 });
 
 // ---------- state
@@ -286,11 +343,18 @@ function render() {
   $('pwState').textContent = S.smtp.password_set ? '✅ set for this session' : '';
   const P = S.participants, drawn = S.draw.status !== 'none';
   $('countBadge').textContent = P.length; $('countTxt').textContent = P.length;
+  const waiting = p => p.late && !p.batch;
+  const W = P.filter(waiting);
   $('lockNote').classList.toggle('hidden', !drawn); $('importBox').classList.toggle('hidden', drawn);
+  $('lateBox').classList.toggle('hidden', !drawn);
+  const tag = p => !p.late ? '' : waiting(p) ? ' <span class="pill pending">late · waiting for draw</span>'
+    : ` <span class="pill sent">late · loop ${p.batch}</span>`;
+  const rmBtn = p => (!drawn || waiting(p))
+    ? `<button class="btn small ghost" onclick="${drawn ? `lateRemove('${p.id}')` : `removeP('${p.id}')`}">Remove</button>` : '';
   $('plist').innerHTML = P.length ? `<tr><th>Name</th><th>Email</th><th>Gifts they don't want</th><th>Secret name</th><th>Anonymous?</th><th></th></tr>` +
-    P.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.email)}</td><td class="hint">${esc(p.hints) || '<i>none</i>'}</td>
+    P.map(p => `<tr><td><b>${esc(p.name)}</b>${tag(p)}</td><td>${esc(p.email)}</td><td class="hint">${esc(p.hints) || '<i>none</i>'}</td>
       <td class="hint">${p.has_codename ? '🔒 Chose their own' : 'Auto-assigned'}</td>
-      <td class="hint">${p.anonymous ? '🤫 Yes' : 'No'}</td><td>${drawn ? '' : `<button class="btn small ghost" onclick="removeP('${p.id}')">Remove</button>`}</td></tr>`).join('')
+      <td class="hint">${p.anonymous ? '🤫 Yes' : 'No'}</td><td>${rmBtn(p)}</td></tr>`).join('')
     : `<tr><td class="hint">No Santas yet - paste your form responses above.</td></tr>`;
 
   // draw tab
@@ -308,18 +372,34 @@ function render() {
   if (drawn) {
     $('drawnAt').textContent = new Date(S.draw.drawn_at).toLocaleString();
     $('fp').textContent = S.draw.fingerprint;
+    const D = P.filter(p => !waiting(p));
     const st = id => (S.sends[id] || {}).status || 'pending';
-    const n = s => P.filter(p => st(p.id) === s).length;
+    const n = s => D.filter(p => st(p.id) === s).length;
     $('st-sent').textContent = n('sent'); $('st-pending').textContent = n('pending'); $('st-failed').textContent = n('failed');
     const burned = S.draw.key_burned || !S.vault.key;
     $('slist').innerHTML = `<tr><th>Santa</th><th>Email</th><th>Status</th><th></th></tr>` + P.map(p => {
+      if (waiting(p)) return `<tr><td><b>${esc(p.name)}</b>${tag(p)}</td><td>${esc(p.email)}</td>
+        <td><span class="pill pending">not drawn yet</span></td><td></td></tr>`;
       const r = S.sends[p.id] || {}; const s = st(p.id);
       const when = r.at ? ` <span class="hint" style="font-size:12px;color:var(--muted)">${new Date(r.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>` : '';
       const err = r.error ? `<div class="hint" style="color:var(--red-dk);font-size:12px">${esc(r.error)}</div>` : '';
-      return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.email)}</td><td><span class="pill ${s}">${s}</span>${when}${err}</td>
+      return `<tr><td><b>${esc(p.name)}</b>${tag(p)}</td><td>${esc(p.email)}</td><td><span class="pill ${s}">${s}</span>${when}${err}</td>
         <td><button class="btn small ghost" ${burned || S.job.active ? 'disabled' : ''} onclick="send('${p.id}')">Resend</button></td></tr>`;
     }).join('');
-    $('retryBtn').disabled = burned || S.job.active || n('sent') === P.length;
+    $('retryBtn').disabled = burned || S.job.active || n('sent') === D.length;
+    // late joiners
+    const anyLate = P.some(p => p.late);
+    $('lateDraw').classList.toggle('hidden', !anyLate);
+    const smtpReady = S.smtp.host && (S.smtp.password_set || !S.smtp.user);
+    $('lateDrawMsg').innerHTML = !W.length ? `<div class="note info">No late joiners waiting. Add them on the Santas tab.</div>`
+      : burned ? `<div class="note bad">The vault key is burned, so late joiners can't be drawn any more.</div>`
+      : W.length < 2 ? `<div class="note warn">1 late joiner waiting: ${esc(W[0].name)}.
+          They need at least one more person to swap with, so wait for 1 more.</div>`
+      : `<div class="note info">${W.length} late joiners ready: ${W.map(p => esc(p.name)).join(', ')}.</div>` +
+        (W.length === 2 ? `<div class="note warn">These 2 will gift each other. They can't tell from their letters -
+          just don't announce that late joiners form their own group. If anyone asks, "you've been added to the draw".</div>` : '') +
+        (smtpReady ? '' : `<div class="note warn">Enter the mailbox password on the Mailbox tab first.</div>`);
+    $('lateDrawBtn').disabled = W.length < 2 || burned || S.job.active || !smtpReady;
     $('remindBtn').disabled = burned || S.job.active;
     $('burnBtn').disabled = burned;
     $('vaultInfo').innerHTML = burned
@@ -327,6 +407,16 @@ function render() {
       : '🔐 Pairings sit in a sealed vault on this machine so lost letters can be resent and the Exchange Day reveal works. ' +
         'Want extra paranoia? Once every letter is delivered, <b>burn the key</b> - the pairings become unreadable forever (you lose resend & reveal).';
   }
+  // backups
+  const H = S.history || [];
+  $('hlist').innerHTML = H.length ? `<tr><th>When</th><th>What happened</th><th>State</th><th></th></tr>` + H.map((h, i) =>
+    `<tr><td class="hint">${new Date(h.at).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td>
+      <td><b>${esc(h.reason)}</b>${i === 0 ? ' <span class="pill sent">latest</span>' : ''}</td><td class="hint">${esc(h.summary)}</td>
+      <td><button class="btn small ghost" ${S.job.active ? 'disabled' : ''} onclick="restorePoint('${h.id}')">Restore</button></td></tr>`).join('')
+    : `<tr><td class="hint">No restore points yet. One is saved after your first import.</td></tr>`;
+  $('burnBackupNote').innerHTML = '🔥 Burning the vault key also wipes the key from these restore points. It <b>can\'t</b> reach backup files you\'ve '
+    + 'already downloaded, so delete those too if you burn the key.';
+
   const j = S.job;
   $('jobBox').classList.toggle('hidden', !j.active);
   if (j.active) { $('jobBar').style.width = (j.total ? 100 * j.done / j.total : 5) + '%'; $('jobMsg').textContent = j.message; }
@@ -395,6 +485,82 @@ function drawAndSend() {
     toast('Names drawn! Fingerprint ' + r.fingerprint);
     await call('/api/send', {which:'pending'});
   });
+}
+function download(text, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type: 'text/plain;charset=utf-8'}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function lateImportFile() {
+  const f = $('lateFile').files[0];
+  if (!f) return toast('Pick the downloaded .csv file first', true);
+  if (/\.xlsx?$/i.test(f.name)) return toast('That is an Excel file - download the responses as .csv instead', true);
+  const text = await f.text();
+  act(async () => {
+    const r = await call('/api/late/import', {text});
+    $('lateWarn').innerHTML = r.warnings.length ? `<div class="note warn">${r.warnings.map(esc).join('<br>')}</div>` : '';
+    toast(r.added ? `🛷 ${r.added} late joiner${r.added > 1 ? 's' : ''} added (${r.skipped} already on the list)`
+                  : `No new people in that file (${r.skipped} already on the list)`);
+    $('lateFile').value = '';
+  });
+}
+function lateAdd() {
+  const p = {name: $('late-name').value, email: $('late-email').value, hints: $('late-hints').value, anonymous: $('late-anon').checked};
+  act(async () => {
+    await call('/api/late/add', p);
+    ['name','email','hints'].forEach(k => $('late-'+k).value = ''); $('late-anon').checked = false; toast('Added late joiner ' + p.name);
+  });
+}
+function lateRemove(id) {
+  if (!confirm('Remove this late joiner? (They have not been drawn yet.)')) return;
+  act(() => call('/api/late/remove', {id}));
+}
+function lateDrawAndSend() {
+  const W = S.participants.filter(p => p.late && !p.batch);
+  if (!confirm(`Draw ${W.length} late joiners into their own loop and email just them?\n\nNobody from the main draw is changed or emailed.`)) return;
+  act(async () => {
+    const r = await call('/api/late/draw');
+    download(r.list, `secret-santa-late-joiners-${r.batch}.txt`);
+    toast(`Late joiners drawn (loop ${r.batch})! Sending their letters...`);
+    await call('/api/send', {ids: r.ids});
+  });
+}
+function backupDownload() {
+  const pass = $('bk-pass').value;
+  if (pass !== $('bk-pass2').value) return toast('The two passphrases don\'t match', true);
+  act(async () => {
+    const r = await call('/api/backup/export', {passphrase: pass});
+    const stamp = r.file.created.replace(/:/g, '').replace('T', '-').slice(0, 15);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(r.file, null, 1)], {type: 'application/json'}));
+    a.download = `santa-backup-${stamp}.json`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    $('bk-pass').value = $('bk-pass2').value = '';
+    toast('💾 Backup downloaded: ' + r.file.summary);
+  });
+}
+const RESTORE_WARN = 'Everything in the app goes back to that point.\n\n' +
+  'Letters already sent stay sent - restoring doesn\'t un-send them. Restoring to before a draw and drawing again ' +
+  'would give people a second, different letter.\n\nYou can undo this from the restore points list.\n\nType RESTORE to confirm:';
+async function restoreFile() {
+  const f = $('rs-file').files[0];
+  if (!f) return toast('Pick the backup .json file first', true);
+  const text = await f.text();
+  let label = ''; try { label = JSON.parse(text).summary || ''; } catch (e) {}
+  const c = prompt((label ? `This backup: ${label}\n\n` : '') + RESTORE_WARN);
+  if (c === null) return;
+  act(async () => {
+    const r = await call('/api/backup/import', {text, passphrase: $('rs-pass').value, confirm: c});
+    $('rs-pass').value = ''; $('rs-file').value = '';
+    toast('Restored ✅ ' + r.summary);
+  });
+}
+function restorePoint(id) {
+  const h = (S.history || []).find(x => x.id === id);
+  const c = prompt(`Go back to: ${h ? h.reason + ' (' + h.summary + ')' : id}\n\n` + RESTORE_WARN);
+  if (c === null) return;
+  act(async () => { const r = await call('/api/history/restore', {id, confirm: c}); toast('Restored ✅ ' + r.summary); });
 }
 function send(which) { act(() => call('/api/send', {which})); }
 function remind() {
