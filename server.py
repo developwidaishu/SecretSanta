@@ -500,11 +500,47 @@ def assign_codenames(people, used, rng):
     return codenames
 
 
-def draw_list_text(title, heading, stamp, fp, chain, by_id):
-    lines = [f"{title} - {heading}", f"Drawn {stamp.replace('T', ' ')} - fingerprint {fp}", ""]
-    lines += [f"{i + 1}) {by_id[g]} will be gifting {by_id[chain[(i + 1) % len(chain)]]}"
-              for i, g in enumerate(chain)]
-    return "\r\n".join(lines) + "\r\n"
+def full_mapping_text(st, vault):
+    """Everything the organiser needs to run Exchange Day by hand if the app can't start:
+    every pairing (main loop + late loops), each Santa's codename, and who must stay anonymous."""
+    people = {p["id"]: p for p in st["participants"]}
+    cn = vault["codenames"]
+    when = lambda s: (s or "").replace("T", " ")[:16]
+    loops = [("MAIN DRAW", vault["chain"], vault.get("drawn_at"))]
+    loops += [(f"LATE JOINERS - LOOP {i + 1}", c["chain"], c.get("drawn_at")) for i, c in enumerate(vault.get("late", []))]
+    total = sum(len(c) for _, c, _ in loops)
+    w = max((len(people[g]["name"]) for _, c, _ in loops for g in c if g in people), default=10)
+    rule = "=" * 78
+    out = [f"{st['event'].get('title', 'Secret Santa')} - FULL MAPPING (CONFIDENTIAL)",
+           f"Downloaded {datetime.now().strftime('%Y-%m-%d %H:%M')} - draw fingerprint {st['draw'].get('fingerprint')}",
+           f"{total} Santas in {len(loops)} loop{'s' if len(loops) > 1 else ''}"
+           + (" (main draw + late joiners)" if len(loops) > 1 else ""),
+           "",
+           "Keep this file private. It's the backup plan if the app can't run on Exchange Day.",
+           "[ANON] = this Santa asked to stay anonymous. Don't unmask them at the reveal.",
+           ""]
+    for title, chain, at in loops:
+        out += [rule, f"{title}  ({len(chain)} Santas, drawn {when(at)})", rule]
+        for i, g in enumerate(chain):
+            r = chain[(i + 1) % len(chain)]
+            if g not in people or r not in people:
+                continue
+            anon = "  [ANON]" if people[g].get("anonymous") else ""
+            out.append(f"{i + 1:>3}) {people[g]['name']:<{w}}  gifts  {people[r]['name']}"
+                       f"    (signs as: {cn.get(g, '?')}){anon}")
+        out.append("")
+    # Reveal order: by giftee, so on the day you can read out "X, your Santa was ..."
+    rows = sorted(((people[r]["name"], people[g]) for _, c, _ in loops for i, g in enumerate(c)
+                   for r in [c[(i + 1) % len(c)]] if g in people and r in people), key=lambda x: x[0].lower())
+    out += [rule, "FOR THE REVEAL - sorted by who received the gift", rule]
+    for recv, g in rows:
+        who = "stays anonymous - don't unmask" if g.get("anonymous") else g["name"]
+        out.append(f"  {recv:<{w}}  got a gift from  {cn.get(g['id'], '?')}  =  {who}")
+    return "\r\n".join(out) + "\r\n"
+
+
+def mapping_filename():
+    return f"secret-santa-full-mapping-{datetime.now().strftime('%Y%m%d-%H%M')}.txt"
 
 
 # --------------------------------------------------------------------------- emails
@@ -936,10 +972,12 @@ def api(path, body):
             st["sends"] = {p["id"]: {"status": "pending"} for p in people}
             save_state(st)
             save_history("Main draw done")
-            by_id = {p["id"]: p["name"] for p in people}
-            text = draw_list_text(st["event"].get("title", "Secret Santa"), "draw list",
-                                  vault["drawn_at"], fp, vault["chain"], by_id)
-            return {"ok": True, "fingerprint": fp, "list": text}
+            return {"ok": True, "fingerprint": fp, "list": full_mapping_text(st, vault), "filename": mapping_filename()}
+
+        if path == "/api/mapping":
+            if st["draw"]["status"] == "none":
+                raise ApiError("Draw the names first.")
+            return {"ok": True, "list": full_mapping_text(st, read_vault()), "filename": mapping_filename()}
 
         # ---- late joiners: they get their own separate loop, so nobody already drawn is touched
         if path == "/api/late/import":
@@ -993,10 +1031,8 @@ def api(path, body):
             st["draw"].setdefault("late_batches", []).append({"batch": batch_no, "at": stamp, "count": len(waiting)})
             save_state(st)
             save_history(f"Late joiners drawn (loop {batch_no})")
-            by_id = {p["id"]: p["name"] for p in waiting}
-            text = draw_list_text(st["event"].get("title", "Secret Santa"), f"late joiners draw #{batch_no}",
-                                  stamp, fp, chain, by_id)
-            return {"ok": True, "fingerprint": fp, "batch": batch_no, "ids": chain, "list": text}
+            return {"ok": True, "fingerprint": fp, "batch": batch_no, "ids": chain,
+                    "list": full_mapping_text(st, vault), "filename": mapping_filename()}
 
         if path == "/api/send":
             if st["draw"]["status"] == "none":

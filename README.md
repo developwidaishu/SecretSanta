@@ -25,6 +25,14 @@ Double-click `start.bat`, or run `python server.py`. It opens http://127.0.0.1:8
      Tip: don't announce that late joiners form their own group. The letters never mention it.
 5. **Exchange Day**: click *Open Exchange Day screen*. It opens in its own window. Type REVEAL on your laptop, then drag the window to the projector and press F for full screen. Use → / Space or a clicker to unmask each card and move on, and ← to go back. Gifts appear in random order (late joiners are mixed in with everyone else), and Santas who chose to stay anonymous are never named.
 
+## Full mapping file (for the organiser)
+- Right after the main draw, and after each late-joiner draw, a plain text file downloads:
+  `secret-santa-full-mapping-YYYYMMDD-HHMM.txt`. It always covers **everyone**: the main draw plus all late loops.
+- Need a fresh copy later? **Draw & Send** tab, then *Download full mapping*.
+- Inside: every pairing, each Santa's codename, who asked to stay anonymous, and a "for the reveal" list sorted by who
+  got the gift. If the app can't run on Exchange Day, read the reveal from that list.
+- It's plain text, so only the organiser should keep it. It stops working once the vault key is burned.
+
 ## Backups & going back to an earlier stage (💾 Backups tab)
 - **Download backup**: saves everything (Santa list, the draw, late joiners, who got their letter) in one `.json` file,
   locked with a passphrase you choose. Lose the passphrase and the file can't be opened, by anyone.

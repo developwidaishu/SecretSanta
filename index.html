@@ -242,6 +242,12 @@
       <textarea id="remindNote" style="min-height:70px;font-family:inherit" placeholder="The votes are in - gift exchange is on Wednesday, Dec 16 at 4pm in the cafeteria! 🎄"></textarea>
       <div class="row"><button class="btn ghost" id="remindBtn" onclick="remind()">Send nudge to all Santas</button></div>
 
+      <h3>📄 Full mapping (for the organiser)</h3>
+      <p class="sub" style="margin-bottom:8px">A plain text file with every pairing, including late joiners, plus each Santa's codename and a
+        ready-made reveal list. It downloads automatically after every draw. Grab a fresh copy here any time.
+        It's the backup plan if the app can't run on Exchange Day.</p>
+      <div class="row"><button class="btn ghost" id="mapBtn" onclick="downloadMapping()">📄 Download full mapping</button></div>
+
       <h3>🧯 Vault controls</h3>
       <div class="note info" id="vaultInfo"></div>
       <div class="row">
@@ -402,6 +408,7 @@ function render() {
     $('lateDrawBtn').disabled = W.length < 2 || burned || S.job.active || !smtpReady;
     $('remindBtn').disabled = burned || S.job.active;
     $('burnBtn').disabled = burned;
+    $('mapBtn').disabled = burned;
     $('vaultInfo').innerHTML = burned
       ? '🔥 The key is burned. Nobody - not even this app - can read the pairings any more. Resends, nudges and the reveal are disabled.'
       : '🔐 Pairings sit in a sealed vault on this machine so lost letters can be resent and the Exchange Day reveal works. ' +
@@ -478,13 +485,14 @@ function drawAndSend() {
   if (!confirm(`Draw names for ${S.participants.length} Santas and email everyone now?\n\nThe roster will be locked after this.`)) return;
   act(async () => {
     const r = await call('/api/draw');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([r.list], {type: 'text/plain;charset=utf-8'}));
-    a.download = 'secret-santa-draw-list.txt'; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    download(r.list, r.filename);
     toast('Names drawn! Fingerprint ' + r.fingerprint);
     await call('/api/send', {which:'pending'});
   });
+}
+function downloadMapping() {
+  if (!confirm('Download the FULL mapping?\n\nThe file shows every pairing in plain text. Only the organiser should have it.')) return;
+  act(async () => { const r = await call('/api/mapping'); download(r.list, r.filename); toast('📄 Full mapping downloaded'); });
 }
 function download(text, name) {
   const a = document.createElement('a');
@@ -521,7 +529,7 @@ function lateDrawAndSend() {
   if (!confirm(`Draw ${W.length} late joiners into their own loop and email just them?\n\nNobody from the main draw is changed or emailed.`)) return;
   act(async () => {
     const r = await call('/api/late/draw');
-    download(r.list, `secret-santa-late-joiners-${r.batch}.txt`);
+    download(r.list, r.filename);
     toast(`Late joiners drawn (loop ${r.batch})! Sending their letters...`);
     await call('/api/send', {ids: r.ids});
   });
